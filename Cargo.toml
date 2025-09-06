@@ -1,8 +1,23 @@
 [package]
 name = "dc"
 version = "0.1.0"
-edition = "2024"
+edition = "2021"
+authors = ["DC Language Team"]
+description = "A simple programming language compiler built with Rust and LLVM"
+license = "MIT"
+repository = "https://github.com/your-repo/dc-language"
 
 [dependencies]
 inkwell = { version = "0.6.0", features = ["llvm18-1"], default-features = false }
 reedline = "0.35.0"
+
+[dev-dependencies]
+tempfile = "3.0"
+
+[[test]]
+name = "unit"
+path = "tests/unit/mod.rs"
+
+[[test]]
+name = "integration"
+path = "tests/integration/mod.rs"
