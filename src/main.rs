@@ -14,20 +14,16 @@ var soma = a + b;
 escreva("A soma é: " + texto(soma));
 "#;
 
-    // Processar
     let lexer = Lexer::new();
     let tokens = lexer.tokenize(code);
     let mut parser = Parser::new(tokens);
     let ast = parser.parse().unwrap();
 
-    // Gerar LLVM IR
     let context = Context::create();
     let mut codegen = CodeGen::new(&context, "meu_programa").unwrap();
     codegen.generate(&ast).unwrap();
 
-    // Ver o IR gerado
     codegen.print_ir();
 
-    // Salvar em arquivo
     std::fs::write("programa.ll", codegen.get_ir()).unwrap();
 }
