@@ -47,6 +47,7 @@ impl Parser {
         match self.current_token() {
             Token::Var => self.parse_variable_declaration(),
             Token::Escreva => self.parse_function_call_statement(),
+            Token::Import => self.parse_import_statement(),
             Token::Ident(_) => self.parse_assignment_or_call(),
             _ => Err(CompilerError::Parser(format!(
                 "Unexpected token: {:?}", self.current_token()
@@ -96,6 +97,44 @@ impl Parser {
         let expr = self.parse_function_call()?;
         self.consume(Token::Semicolon, "Expected ';' after function call")?;
         Ok(Statement::FunctionCall(expr))
+    }
+
+    /// Parses an import statement: import "module" or import {item1, item2} from "module"
+    fn parse_import_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Import, "Expected 'import' keyword")?;
+
+        if let Token::String(module) = self.current_token().clone() {
+            self.advance();
+            self.consume(Token::Semicolon, "Expected ';' after import")?;
+            Ok(Statement::Import { module, items: None })
+        } else if self.match_token(Token::LeftBrace) {
+            // import {items} from "module"
+            let mut items = Vec::new();
+            while !self.check(Token::RightBrace) && !self.is_at_end() {
+                if let Token::Ident(name) = self.current_token().clone() {
+                    items.push(name);
+                    self.advance();
+                } else {
+                    return Err(CompilerError::Parser("Expected identifier in import list".to_string()));
+                }
+                if self.match_token(Token::Comma) {
+                    // continue
+                } else if !self.check(Token::RightBrace) {
+                    return Err(CompilerError::Parser("Expected ',' or '}' in import list".to_string()));
+                }
+            }
+            self.consume(Token::RightBrace, "Expected '}' after import list")?;
+            self.consume(Token::Ident("from".to_string()), "Expected 'from' after import list")?;
+            if let Token::String(module) = self.current_token().clone() {
+                self.advance();
+                self.consume(Token::Semicolon, "Expected ';' after import")?;
+                Ok(Statement::Import { module, items: Some(items) })
+            } else {
+                Err(CompilerError::Parser("Expected module name after 'from'".to_string()))
+            }
+        } else {
+            Err(CompilerError::Parser("Expected string or '{' after 'import'".to_string()))
+        }
     }
 
     /// Parses a function call expression
@@ -244,11 +283,12 @@ impl Parser {
     }
 
     fn consume(&mut self, expected: Token, message: &str) -> Result<String, CompilerError> {
-        if std::mem::discriminant(self.current_token()) == std::mem::discriminant(&expected) {
+        if self.check(expected.clone()) {
             let token = self.current_token().clone();
             self.advance();
             match token {
                 Token::Ident(name) => Ok(name),
+                Token::String(s) => Ok(s),
                 _ => Ok(String::new()),
             }
         } else {
@@ -306,7 +346,12 @@ impl Parser {
     }
 
     fn check(&self, expected: Token) -> bool {
-        !self.is_at_end() && std::mem::discriminant(self.current_token()) == std::mem::discriminant(&expected)
+        !self.is_at_end() && match (self.current_token(), &expected) {
+            (Token::String(_), Token::String(_)) => true,
+            (Token::Ident(_), Token::Ident(_)) => true,
+            (Token::Number(_), Token::Number(_)) => true,
+            _ => std::mem::discriminant(self.current_token()) == std::mem::discriminant(&expected),
+        }
     }
 
     fn is_at_end(&self) -> bool {

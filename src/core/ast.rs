@@ -51,6 +51,12 @@ pub enum Statement {
         value: Expr,
     },
 
+    /// Import statement
+    Import {
+        module: String,
+        items: Option<Vec<String>>,
+    },
+
     /// Function call as a statement
     FunctionCall(Expr),
 }

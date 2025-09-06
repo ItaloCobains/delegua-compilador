@@ -45,6 +45,9 @@ impl Lexer {
                 ';' => { chars.next(); tokens.push(Token::Semicolon); }
                 '(' => { chars.next(); tokens.push(Token::LeftParen); }
                 ')' => { chars.next(); tokens.push(Token::RightParen); }
+                '{' => { chars.next(); tokens.push(Token::LeftBrace); }
+                '}' => { chars.next(); tokens.push(Token::RightBrace); }
+                ',' => { chars.next(); tokens.push(Token::Comma); }
 
                 // String literals
                 '"' => tokens.push(Self::lex_string(&mut chars)),
@@ -117,6 +120,7 @@ impl Lexer {
             "var" => Token::Var,
             "escreva" => Token::Escreva,
             "texto" => Token::Texto,
+            "importar" => Token::Import,
             _ => Token::Ident(ident),
         }
     }

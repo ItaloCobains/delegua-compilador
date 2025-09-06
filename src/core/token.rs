@@ -24,6 +24,9 @@ pub enum Token {
     /// String conversion function keyword
     Texto,
 
+    /// Import keyword
+    Import,
+
     /// Arithmetic operators
     Plus, Minus, Multiply, Divide,
 
@@ -35,6 +38,10 @@ pub enum Token {
 
     /// Grouping symbols
     LeftParen, RightParen,
+    LeftBrace, RightBrace,
+
+    /// Comma separator
+    Comma,
 
     /// End of file marker
     EOF,

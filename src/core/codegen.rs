@@ -20,16 +20,14 @@ pub struct CodeGen<'ctx> {
     module: Module<'ctx>,
     builder: Builder<'ctx>,
 
-    // Built-in function declarations
-    printf_fn: FunctionValue<'ctx>,
-    malloc_fn: FunctionValue<'ctx>,
-    strlen_fn: FunctionValue<'ctx>,
-    strcpy_fn: FunctionValue<'ctx>,
-    strcat_fn: FunctionValue<'ctx>,
-    sprintf_fn: FunctionValue<'ctx>,
-
     // Symbol table for variables
     variables: HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>)>,
+
+    // Lazy declared built-in functions
+    built_in_functions: HashMap<String, FunctionValue<'ctx>>,
+
+    // Module functions
+    modules: HashMap<String, HashMap<String, FunctionValue<'ctx>>>,
 
     // Common LLVM types
     i64_type: IntType<'ctx>,
@@ -45,52 +43,59 @@ impl<'ctx> CodeGen<'ctx> {
         let i64_type = context.i64_type();
         let i8_ptr_type = context.ptr_type(inkwell::AddressSpace::default());
 
-        let mut codegen = CodeGen {
+        let codegen = CodeGen {
             context,
             module,
             builder,
             variables: HashMap::new(),
+            built_in_functions: HashMap::new(),
+            modules: HashMap::new(),
             i64_type,
             i8_ptr_type,
-            printf_fn: unsafe { std::mem::zeroed() },
-            malloc_fn: unsafe { std::mem::zeroed() },
-            strlen_fn: unsafe { std::mem::zeroed() },
-            strcpy_fn: unsafe { std::mem::zeroed() },
-            strcat_fn: unsafe { std::mem::zeroed() },
-            sprintf_fn: unsafe { std::mem::zeroed() },
         };
 
-        codegen.declare_built_in_functions()?;
         Ok(codegen)
     }
 
-    /// Declares all built-in functions needed by the DC language runtime
-    fn declare_built_in_functions(&mut self) -> Result<(), CompilerError> {
-        // printf for output
-        let printf_type = self.i64_type.fn_type(&[self.i8_ptr_type.into()], true);
-        self.printf_fn = self.module.add_function("printf", printf_type, None);
+    /// Gets or declares a built-in function
+    fn get_built_in_function(&mut self, name: &str) -> Result<FunctionValue<'ctx>, CompilerError> {
+        if let Some(&fn_val) = self.built_in_functions.get(name) {
+            return Ok(fn_val);
+        }
 
-        // Memory management functions
-        let malloc_type = self.i8_ptr_type.fn_type(&[self.i64_type.into()], false);
-        self.malloc_fn = self.module.add_function("malloc", malloc_type, None);
+        let fn_val = match name {
+            "printf" => {
+                let printf_type = self.i64_type.fn_type(&[self.i8_ptr_type.into()], true);
+                self.module.add_function("printf", printf_type, None)
+            }
+            "malloc" => {
+                let malloc_type = self.i8_ptr_type.fn_type(&[self.i64_type.into()], false);
+                self.module.add_function("malloc", malloc_type, None)
+            }
+            "strlen" => {
+                let strlen_type = self.i64_type.fn_type(&[self.i8_ptr_type.into()], false);
+                self.module.add_function("strlen", strlen_type, None)
+            }
+            "strcpy" => {
+                let strcpy_type = self.i8_ptr_type.fn_type(&[self.i8_ptr_type.into(), self.i8_ptr_type.into()], false);
+                self.module.add_function("strcpy", strcpy_type, None)
+            }
+            "strcat" => {
+                let strcat_type = self.i8_ptr_type.fn_type(&[self.i8_ptr_type.into(), self.i8_ptr_type.into()], false);
+                self.module.add_function("strcat", strcat_type, None)
+            }
+            "sprintf" => {
+                let sprintf_type = self.i64_type.fn_type(&[
+                    self.i8_ptr_type.into(),
+                    self.i8_ptr_type.into()
+                ], true);
+                self.module.add_function("sprintf", sprintf_type, None)
+            }
+            _ => return Err(CompilerError::CodeGen(format!("Unknown built-in function: {}", name))),
+        };
 
-        // String manipulation functions
-        let strlen_type = self.i64_type.fn_type(&[self.i8_ptr_type.into()], false);
-        self.strlen_fn = self.module.add_function("strlen", strlen_type, None);
-
-        let strcpy_type = self.i8_ptr_type.fn_type(&[self.i8_ptr_type.into(), self.i8_ptr_type.into()], false);
-        self.strcpy_fn = self.module.add_function("strcpy", strcpy_type, None);
-
-        let strcat_type = self.i8_ptr_type.fn_type(&[self.i8_ptr_type.into(), self.i8_ptr_type.into()], false);
-        self.strcat_fn = self.module.add_function("strcat", strcat_type, None);
-
-        let sprintf_type = self.i64_type.fn_type(&[
-            self.i8_ptr_type.into(),
-            self.i8_ptr_type.into()
-        ], true);
-        self.sprintf_fn = self.module.add_function("sprintf", sprintf_type, None);
-
-        Ok(())
+        self.built_in_functions.insert(name.to_string(), fn_val);
+        Ok(fn_val)
     }
 
     /// Generates LLVM IR for a complete DC program
@@ -123,11 +128,20 @@ impl<'ctx> CodeGen<'ctx> {
             Statement::Assignment { name, value } => {
                 self.generate_assignment(name, value)
             }
+            Statement::Import { module, items } => {
+                self.generate_import(module, items.as_ref())
+            }
             Statement::FunctionCall(expr) => {
                 self.generate_expression(expr)?;
                 Ok(())
             }
         }
+    }
+
+    /// Generates code for import statement
+    fn generate_import(&mut self, _module: &str, _items: Option<&Vec<String>>) -> Result<(), CompilerError> {
+        // TODO: Implement module loading and function declaration
+        Ok(())
     }
 
     /// Generates code for variable declaration
@@ -258,25 +272,27 @@ impl<'ctx> CodeGen<'ctx> {
 
         match arg {
             BasicValueEnum::PointerValue(str_ptr) => {
+                let printf_fn = self.get_built_in_function("printf")?;
                 let format_str = self.context.const_string(b"%s\n\0", false);
                 let format_global = self.module.add_global(format_str.get_type(), None, "format_str");
                 format_global.set_initializer(&format_str);
                 let format_ptr = format_global.as_pointer_value();
 
                 self.builder.build_call(
-                    self.printf_fn,
+                    printf_fn,
                     &[format_ptr.into(), str_ptr.into()],
                     "printf_call"
                 ).map_err(|e| CompilerError::CodeGen(format!("Error calling printf: {:?}", e)))?;
             }
             BasicValueEnum::IntValue(int_val) => {
+                let printf_fn = self.get_built_in_function("printf")?;
                 let format_str = self.context.const_string(b"%lld\n\0", false);
                 let format_global = self.module.add_global(format_str.get_type(), None, "format_int");
                 format_global.set_initializer(&format_str);
                 let format_ptr = format_global.as_pointer_value();
 
                 self.builder.build_call(
-                    self.printf_fn,
+                    printf_fn,
                     &[format_ptr.into(), int_val.into()],
                     "printf_call"
                 ).map_err(|e| CompilerError::CodeGen(format!("Error calling printf: {:?}", e)))?;
@@ -308,8 +324,9 @@ impl<'ctx> CodeGen<'ctx> {
 
     /// Converts an integer to its string representation
     fn int_to_string(&mut self, int_val: IntValue<'ctx>) -> Result<PointerValue<'ctx>, CompilerError> {
+        let malloc_fn = self.get_built_in_function("malloc")?;
         let buffer_size = self.i64_type.const_int(20, false);
-        let buffer_call = self.builder.build_call(self.malloc_fn, &[buffer_size.into()], "int_str_buffer")
+        let buffer_call = self.builder.build_call(malloc_fn, &[buffer_size.into()], "int_str_buffer")
             .map_err(|e| CompilerError::CodeGen(format!("Error calling malloc: {:?}", e)))?;
 
         let buffer = buffer_call.try_as_basic_value()
@@ -317,13 +334,14 @@ impl<'ctx> CodeGen<'ctx> {
             .unwrap()
             .into_pointer_value();
 
+        let sprintf_fn = self.get_built_in_function("sprintf")?;
         let format_str = self.context.const_string(b"%lld\0", false);
         let format_global = self.module.add_global(format_str.get_type(), None, "int_format");
         format_global.set_initializer(&format_str);
         let format_ptr = format_global.as_pointer_value();
 
         self.builder.build_call(
-            self.sprintf_fn,
+            sprintf_fn,
             &[buffer.into(), format_ptr.into(), int_val.into()],
             "sprintf_call"
         ).map_err(|e| CompilerError::CodeGen(format!("Error calling sprintf: {:?}", e)))?;
@@ -333,15 +351,16 @@ impl<'ctx> CodeGen<'ctx> {
 
     /// Concatenates two strings
     fn generate_string_concat(&mut self, left: PointerValue<'ctx>, right: PointerValue<'ctx>) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        let strlen_fn = self.get_built_in_function("strlen")?;
         // Calculate total length
-        let left_len_call = self.builder.build_call(self.strlen_fn, &[left.into()], "left_len")
+        let left_len_call = self.builder.build_call(strlen_fn, &[left.into()], "left_len")
             .map_err(|e| CompilerError::CodeGen(format!("Error calling strlen: {:?}", e)))?;
         let left_len = left_len_call.try_as_basic_value()
             .left()
             .unwrap()
             .into_int_value();
 
-        let right_len_call = self.builder.build_call(self.strlen_fn, &[right.into()], "right_len")
+        let right_len_call = self.builder.build_call(strlen_fn, &[right.into()], "right_len")
             .map_err(|e| CompilerError::CodeGen(format!("Error calling strlen: {:?}", e)))?;
         let right_len = right_len_call.try_as_basic_value()
             .left()
@@ -357,7 +376,8 @@ impl<'ctx> CodeGen<'ctx> {
         ).map_err(|e| CompilerError::CodeGen(format!("Error building add: {:?}", e)))?;
 
         // Allocate result buffer
-        let result_buffer_call = self.builder.build_call(self.malloc_fn, &[total_len_plus_one.into()], "concat_buffer")
+        let malloc_fn = self.get_built_in_function("malloc")?;
+        let result_buffer_call = self.builder.build_call(malloc_fn, &[total_len_plus_one.into()], "concat_buffer")
             .map_err(|e| CompilerError::CodeGen(format!("Error calling malloc: {:?}", e)))?;
         let result_buffer = result_buffer_call.try_as_basic_value()
             .left()
@@ -365,10 +385,12 @@ impl<'ctx> CodeGen<'ctx> {
             .into_pointer_value();
 
         // Copy strings
-        self.builder.build_call(self.strcpy_fn, &[result_buffer.into(), left.into()], "strcpy_first")
+        let strcpy_fn = self.get_built_in_function("strcpy")?;
+        self.builder.build_call(strcpy_fn, &[result_buffer.into(), left.into()], "strcpy_first")
             .map_err(|e| CompilerError::CodeGen(format!("Error calling strcpy: {:?}", e)))?;
 
-        self.builder.build_call(self.strcat_fn, &[result_buffer.into(), right.into()], "strcat_second")
+        let strcat_fn = self.get_built_in_function("strcat")?;
+        self.builder.build_call(strcat_fn, &[result_buffer.into(), right.into()], "strcat_second")
             .map_err(|e| CompilerError::CodeGen(format!("Error calling strcat: {:?}", e)))?;
 
         Ok(result_buffer.into())
