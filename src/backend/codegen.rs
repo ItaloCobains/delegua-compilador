@@ -1,4 +1,3 @@
-// src/backend/codegen.rs
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::builder::Builder;
@@ -23,7 +22,6 @@ pub struct CodeGen<'ctx> {
     variables: HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>)>,
 
     i64_type: IntType<'ctx>,
-    i8_type: IntType<'ctx>,
     i8_ptr_type: PointerType<'ctx>,
 }
 
@@ -33,7 +31,6 @@ impl<'ctx> CodeGen<'ctx> {
         let builder = context.create_builder();
 
         let i64_type = context.i64_type();
-        let i8_type = context.i8_type();
         let i8_ptr_type = context.ptr_type(inkwell::AddressSpace::default());
 
         let mut codegen = CodeGen {
@@ -42,7 +39,6 @@ impl<'ctx> CodeGen<'ctx> {
             builder,
             variables: HashMap::new(),
             i64_type,
-            i8_type,
             i8_ptr_type,
             printf_fn: unsafe { std::mem::zeroed() },
             malloc_fn: unsafe { std::mem::zeroed() },
