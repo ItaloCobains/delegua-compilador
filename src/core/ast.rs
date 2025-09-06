@@ -37,6 +37,18 @@ pub enum Expr {
         callee: Box<Expr>,
         args: Vec<Expr>,
     },
+    
+    /// Increment expression (e.g., ++x or x++)
+    Increment {
+        operand: Box<Expr>,
+        prefix: bool, // true for ++x, false for x++
+    },
+    
+    /// Decrement expression (e.g., --x or x--)
+    Decrement {
+        operand: Box<Expr>,
+        prefix: bool, // true for --x, false for x--
+    },
 
     /// Anonymous function (e.g., funcao(a) { return a + 1; })
     Function {
@@ -48,7 +60,7 @@ pub enum Expr {
 /// Binary operators supported by the language
 #[derive(Debug, PartialEq, Clone)]
 pub enum BinaryOp {
-    Add, Subtract, Multiply, Divide,
+    Add, Subtract, Multiply, Divide, Modulo, Power,
     Equal, NotEqual, Less, Greater, LessEqual, GreaterEqual,
 }
 

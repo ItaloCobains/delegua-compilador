@@ -72,6 +72,12 @@ pub enum Token<'a> {
     Minus(Position),
     Multiply(Position),
     Divide(Position),
+    Modulo(Position),         // % operator
+    Power(Position),          // ** operator
+    
+    /// Increment/decrement operators
+    Increment(Position),      // ++ operator
+    Decrement(Position),      // -- operator
 
     /// Assignment operator
     Assign(Position),

@@ -100,9 +100,34 @@ impl<'a> Lexer<'a> {
                 }
 
                 // Operators and punctuation
-                '+' => { self.advance(); tokens.push(Token::Plus(self.get_position())); }
-                '-' => { self.advance(); tokens.push(Token::Minus(self.get_position())); }
-                '*' => { self.advance(); tokens.push(Token::Multiply(self.get_position())); }
+                '+' => {
+                    self.advance();
+                    if let Some('+') = self.chars.peek() {
+                        self.advance();
+                        tokens.push(Token::Increment(self.get_position()));
+                    } else {
+                        tokens.push(Token::Plus(self.get_position()));
+                    }
+                }
+                '-' => {
+                    self.advance();
+                    if let Some('-') = self.chars.peek() {
+                        self.advance();
+                        tokens.push(Token::Decrement(self.get_position()));
+                    } else {
+                        tokens.push(Token::Minus(self.get_position()));
+                    }
+                }
+                '*' => {
+                    self.advance();
+                    if let Some('*') = self.chars.peek() {
+                        self.advance();
+                        tokens.push(Token::Power(self.get_position()));
+                    } else {
+                        tokens.push(Token::Multiply(self.get_position()));
+                    }
+                }
+                '%' => { self.advance(); tokens.push(Token::Modulo(self.get_position())); }
                 '=' => {
                     self.advance();
                     if let Some('=') = self.chars.peek() {
@@ -263,6 +288,7 @@ impl<'a> Lexer<'a> {
             "verdadeiro" => Token::Verdadeiro(start_pos),
             "falso" => Token::Falso(start_pos),
             "funcao" => Token::Funcao(start_pos),
+            "função" => Token::Funcao(start_pos),  // Portuguese spelling with accent
             "retorna" => Token::Retorna(start_pos),
             _ => Token::Ident(ident_slice, start_pos),
         }

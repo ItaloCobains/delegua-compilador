@@ -351,6 +351,8 @@ impl<'ctx> CodeGen<'ctx> {
                             BinaryOp::Subtract => (self.safe_build(self.builder.build_int_sub(l, r, "sub"), "integer subtraction")?, "sub"),
                             BinaryOp::Multiply => (self.safe_build(self.builder.build_int_mul(l, r, "mul"), "integer multiplication")?, "mul"),
                             BinaryOp::Divide => (self.safe_build(self.builder.build_int_signed_div(l, r, "div"), "integer division")?, "div"),
+                            BinaryOp::Modulo => (self.safe_build(self.builder.build_int_signed_rem(l, r, "mod"), "integer modulo")?, "mod"),
+                            BinaryOp::Power => (self.generate_integer_power(l, r)?, "pow"),
                             BinaryOp::Equal => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::EQ, l, r, "eq"), "equality comparison")?, "eq"),
                             BinaryOp::NotEqual => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::NE, l, r, "ne"), "inequality comparison")?, "ne"),
                             BinaryOp::Less => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::SLT, l, r, "lt"), "less than comparison")?, "lt"),
@@ -457,6 +459,14 @@ impl<'ctx> CodeGen<'ctx> {
             }
             Expr::Function { params, body } => {
                 self.generate_anonymous_function(&params, &body)
+            }
+            
+            Expr::Increment { operand, prefix } => {
+                self.generate_increment_decrement(operand, true, *prefix)
+            }
+            
+            Expr::Decrement { operand, prefix } => {
+                self.generate_increment_decrement(operand, false, *prefix)
             }
         }
     }
@@ -742,6 +752,167 @@ impl<'ctx> CodeGen<'ctx> {
         result.map_err(|e| CompilerError::CodeGen(
             format!("Error in {}: {:?}", operation, e)
         ))
+    }
+    
+    /// Generates integer exponentiation using loop-based approach
+    fn generate_integer_power(&mut self, base: inkwell::values::IntValue<'ctx>, exp: inkwell::values::IntValue<'ctx>) -> Result<inkwell::values::IntValue<'ctx>, CompilerError> {
+        // For now, implement a simple pow function using a loop
+        // TODO: For better performance, could use LLVM's powi intrinsic or binary exponentiation
+        
+        let current_function = self.builder.get_insert_block()
+            .ok_or_else(|| CompilerError::CodeGen("No current basic block for power operation".to_string()))?
+            .get_parent()
+            .ok_or_else(|| CompilerError::CodeGen("No current function for power operation".to_string()))?;
+            
+        // Create basic blocks
+        let _entry_bb = self.builder.get_insert_block().unwrap();
+        let loop_bb = self.context.append_basic_block(current_function, "pow_loop");
+        let exit_bb = self.context.append_basic_block(current_function, "pow_exit");
+        
+        // Initialize variables
+        let result_ptr = self.safe_build(
+            self.builder.build_alloca(self.i64_type, "pow_result"),
+            "alloca pow result"
+        )?;
+        let counter_ptr = self.safe_build(
+            self.builder.build_alloca(self.i64_type, "pow_counter"), 
+            "alloca pow counter"
+        )?;
+        
+        // Set initial values: result = 1, counter = exp
+        let one = self.i64_type.const_int(1, false);
+        let zero = self.i64_type.const_int(0, false);
+        
+        self.safe_build(
+            self.builder.build_store(result_ptr, one),
+            "store initial pow result"
+        )?;
+        self.safe_build(
+            self.builder.build_store(counter_ptr, exp),
+            "store initial pow counter"
+        )?;
+        
+        // Jump to loop
+        self.safe_build(
+            self.builder.build_unconditional_branch(loop_bb),
+            "jump to pow loop"
+        )?;
+        
+        // Loop block: while (counter > 0) { result *= base; counter--; }
+        self.builder.position_at_end(loop_bb);
+        let counter_val = self.safe_build(
+            self.builder.build_load(self.i64_type, counter_ptr, "load_counter"),
+            "load pow counter"
+        )?.into_int_value();
+        
+        let is_positive = self.safe_build(
+            self.builder.build_int_compare(inkwell::IntPredicate::SGT, counter_val, zero, "counter_positive"),
+            "compare counter with zero"
+        )?;
+        
+        let multiply_bb = self.context.append_basic_block(current_function, "pow_multiply");
+        self.safe_build(
+            self.builder.build_conditional_branch(is_positive, multiply_bb, exit_bb),
+            "pow loop condition"
+        )?;
+        
+        // Multiply block
+        self.builder.position_at_end(multiply_bb);
+        let current_result = self.safe_build(
+            self.builder.build_load(self.i64_type, result_ptr, "load_result"),
+            "load pow result"
+        )?.into_int_value();
+        
+        let new_result = self.safe_build(
+            self.builder.build_int_mul(current_result, base, "pow_multiply"),
+            "multiply in pow loop"
+        )?;
+        let decremented_counter = self.safe_build(
+            self.builder.build_int_sub(counter_val, one, "decrement_counter"),
+            "decrement pow counter"
+        )?;
+        
+        self.safe_build(
+            self.builder.build_store(result_ptr, new_result),
+            "store updated pow result"
+        )?;
+        self.safe_build(
+            self.builder.build_store(counter_ptr, decremented_counter),
+            "store updated pow counter"
+        )?;
+        
+        self.safe_build(
+            self.builder.build_unconditional_branch(loop_bb),
+            "jump back to pow loop"
+        )?;
+        
+        // Exit block
+        self.builder.position_at_end(exit_bb);
+        let final_result = self.safe_build(
+            self.builder.build_load(self.i64_type, result_ptr, "final_pow_result"),
+            "load final pow result"
+        )?.into_int_value();
+        
+        Ok(final_result)
+    }
+    
+    /// Generates increment/decrement operations (++x, x++, --x, x--)
+    fn generate_increment_decrement(&mut self, operand: &Expr, is_increment: bool, prefix: bool) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        // For now, only support increment/decrement on identifiers (variables)
+        if let Expr::Identifier(name) = operand {
+            if let Some(&(var_ptr, var_type)) = self.variables.get(name) {
+                match var_type {
+                    VariableType::Int(_) => {
+                        // Load current value
+                        let current_val = self.safe_build(
+                            self.builder.build_load(self.i64_type, var_ptr, &format!("load_{}", name)),
+                            &format!("load variable {} for increment/decrement", name)
+                        )?.into_int_value();
+                        
+                        // Calculate new value
+                        let one = self.i64_type.const_int(1, false);
+                        let new_val = if is_increment {
+                            self.safe_build(
+                                self.builder.build_int_add(current_val, one, &format!("inc_{}", name)),
+                                &format!("increment variable {}", name)
+                            )?
+                        } else {
+                            self.safe_build(
+                                self.builder.build_int_sub(current_val, one, &format!("dec_{}", name)),
+                                &format!("decrement variable {}", name)
+                            )?
+                        };
+                        
+                        // Store new value
+                        self.safe_build(
+                            self.builder.build_store(var_ptr, new_val),
+                            &format!("store {}cremented value to {}", 
+                                   if is_increment { "in" } else { "de" }, name)
+                        )?;
+                        
+                        // Return appropriate value based on prefix/postfix
+                        let return_val = if prefix {
+                            new_val  // Prefix: return new value (++x, --x)
+                        } else {
+                            current_val  // Postfix: return old value (x++, x--)
+                        };
+                        
+                        Ok(return_val.into())
+                    }
+                    _ => Err(CompilerError::CodeGen(
+                        format!("Cannot increment/decrement non-integer variable '{}'", name)
+                    ))
+                }
+            } else {
+                Err(CompilerError::CodeGen(
+                    format!("Variable '{}' not found for increment/decrement", name)
+                ))
+            }
+        } else {
+            Err(CompilerError::CodeGen(
+                "Increment/decrement only supported on variables for now".to_string()
+            ))
+        }
     }
 
 

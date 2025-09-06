@@ -1,0 +1,6 @@
+funcao teste(n) {
+    retorna n + 1;
+}
+
+var resultado = teste(5);
+escreva("resultado: " + texto(resultado));

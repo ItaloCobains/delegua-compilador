@@ -108,6 +108,8 @@ impl<'a> Parser<'a> {
             }
             Token::Retorna(_) => self.parse_return_statement(),
             Token::Ident(_, _) => self.parse_assignment_or_call(),
+            Token::Increment(_) => self.parse_prefix_increment_decrement(true),
+            Token::Decrement(_) => self.parse_prefix_increment_decrement(false),
             _ => Err(CompilerError::Parser(format!(
                 "Unexpected token: {:?}", self.current_token()
             ))),
@@ -132,7 +134,7 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parses an assignment or function call: ident = expr; or ident(args);
+    /// Parses an assignment, function call, or increment/decrement: ident = expr; or ident(args); or ident++; or ++ident;
     fn parse_assignment_or_call(&mut self) -> Result<Statement, CompilerError> {
         let name = match self.current_token() {
             Token::Ident(name, _) => name.to_string(),
@@ -152,10 +154,49 @@ impl<'a> Parser<'a> {
                 callee: Box::new(Expr::Identifier(name)),
                 args,
             }))
+        } else if matches!(self.current_token(), Token::Increment(_)) {
+            self.advance(); // consume ++
+            self.consume(Self::token_with_pos(Token::Semicolon), "Expected ';' after increment")?;
+            Ok(Statement::FunctionCall(Expr::Increment {
+                operand: Box::new(Expr::Identifier(name)),
+                prefix: false, // postfix: x++
+            }))
+        } else if matches!(self.current_token(), Token::Decrement(_)) {
+            self.advance(); // consume --
+            self.consume(Self::token_with_pos(Token::Semicolon), "Expected ';' after decrement")?;
+            Ok(Statement::FunctionCall(Expr::Decrement {
+                operand: Box::new(Expr::Identifier(name)),
+                prefix: false, // postfix: x--
+            }))
         } else {
             Err(CompilerError::Parser(
-                "Expected '=' for assignment or '(' for function call".to_string()
+                "Expected '=', '(', '++', or '--' after identifier".to_string()
             ))
+        }
+    }
+    
+    /// Parses prefix increment/decrement: ++ident; or --ident;
+    fn parse_prefix_increment_decrement(&mut self, is_increment: bool) -> Result<Statement, CompilerError> {
+        self.advance(); // consume ++ or --
+        
+        let name = match self.current_token() {
+            Token::Ident(name, _) => name.to_string(),
+            _ => return Err(CompilerError::Parser("Expected identifier after ++ or --".to_string())),
+        };
+        self.advance();
+        
+        self.consume(Self::token_with_pos(Token::Semicolon), "Expected ';' after prefix increment/decrement")?;
+        
+        if is_increment {
+            Ok(Statement::FunctionCall(Expr::Increment {
+                operand: Box::new(Expr::Identifier(name)),
+                prefix: true, // prefix: ++x
+            }))
+        } else {
+            Ok(Statement::FunctionCall(Expr::Decrement {
+                operand: Box::new(Expr::Identifier(name)),
+                prefix: true, // prefix: --x
+            }))
         }
     }
 
@@ -338,19 +379,20 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    /// Parses multiplicative expressions (*, /) - optimized
+    /// Parses multiplicative expressions (*, /, %) - optimized
     fn parse_multiplicative(&mut self) -> Result<Expr, CompilerError> {
-        let mut left = self.parse_unary()?;
+        let mut left = self.parse_power()?;
 
-        while matches!(self.current_token(), Token::Multiply(_) | Token::Divide(_)) {
+        while matches!(self.current_token(), Token::Multiply(_) | Token::Divide(_) | Token::Modulo(_)) {
             let operator = match self.current_token() {
                 Token::Multiply(_) => BinaryOp::Multiply,
                 Token::Divide(_) => BinaryOp::Divide,
+                Token::Modulo(_) => BinaryOp::Modulo,
                 _ => unreachable!(),
             };
             self.advance();
 
-            let right = self.parse_unary()?;
+            let right = self.parse_power()?;
             left = Expr::Binary {
                 left: Box::new(left),
                 operator,
@@ -360,8 +402,26 @@ impl<'a> Parser<'a> {
 
         Ok(left)
     }
+    
+    /// Parses power expressions (**) - right associative, highest precedence
+    fn parse_power(&mut self) -> Result<Expr, CompilerError> {
+        let mut left = self.parse_unary()?;
+        
+        // Right associative: 2**3**2 = 2**(3**2) = 512
+        if matches!(self.current_token(), Token::Power(_)) {
+            self.advance();
+            let right = self.parse_power()?; // Right associative recursion
+            left = Expr::Binary {
+                left: Box::new(left),
+                operator: BinaryOp::Power,
+                right: Box::new(right),
+            };
+        }
+        
+        Ok(left)
+    }
 
-    /// Parses unary expressions (-, +) - optimized
+    /// Parses unary expressions (-, +, ++, --) - optimized
     fn parse_unary(&mut self) -> Result<Expr, CompilerError> {
         match self.current_token() {
             Token::Plus(_) => {
@@ -377,8 +437,52 @@ impl<'a> Parser<'a> {
                     operand: Box::new(operand),
                 })
             }
-            _ => self.parse_primary()
+            Token::Increment(_) => {
+                self.advance();
+                let operand = self.parse_postfix()?;
+                Ok(Expr::Increment {
+                    operand: Box::new(operand),
+                    prefix: true,
+                })
+            }
+            Token::Decrement(_) => {
+                self.advance();
+                let operand = self.parse_postfix()?;
+                Ok(Expr::Decrement {
+                    operand: Box::new(operand),
+                    prefix: true,
+                })
+            }
+            _ => self.parse_postfix()
         }
+    }
+    
+    /// Parses postfix expressions (like x++, x--)
+    fn parse_postfix(&mut self) -> Result<Expr, CompilerError> {
+        let mut expr = self.parse_primary()?;
+        
+        // Handle postfix increment/decrement
+        loop {
+            match self.current_token() {
+                Token::Increment(_) => {
+                    self.advance();
+                    expr = Expr::Increment {
+                        operand: Box::new(expr),
+                        prefix: false,
+                    };
+                }
+                Token::Decrement(_) => {
+                    self.advance();
+                    expr = Expr::Decrement {
+                        operand: Box::new(expr),
+                        prefix: false,
+                    };
+                }
+                _ => break,
+            }
+        }
+        
+        Ok(expr)
     }
 
     /// Parses primary expressions (literals, identifiers, function calls, parentheses)
@@ -676,6 +780,7 @@ impl<'a> Parser<'a> {
     /// Parses a for statement: para [initializer]; [condition]; [increment] { statements }
     fn parse_for_statement(&mut self) -> Result<Statement, CompilerError> {
         self.consume(Self::token_with_pos(Token::Para), "Expected 'para' keyword")?;
+        self.consume(Self::token_with_pos(Token::LeftParen), "Expected '(' after 'para'")?;
 
         let initializer = if self.match_token(Self::token_with_pos(Token::Var)) {
             let name = self.consume_identifier("Expected variable name")?;
@@ -711,6 +816,7 @@ impl<'a> Parser<'a> {
             self.advance();
         }
 
+        self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after for header")?;
         self.consume(Self::token_with_pos(Token::LeftBrace), "Expected '{' after for header")?;
         let body = self.parse_block()?;
 
