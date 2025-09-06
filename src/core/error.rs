@@ -6,7 +6,7 @@
 use std::fmt;
 
 /// Represents errors that can occur during compilation
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum CompilerError {
     /// Lexical analysis errors
     Lexer(String),
@@ -18,7 +18,7 @@ pub enum CompilerError {
     CodeGen(String),
 
     /// I/O errors
-    Io(std::io::Error),
+    Io(String),
 
     /// REPL-specific errors
     Repl(String),
@@ -40,7 +40,7 @@ impl std::error::Error for CompilerError {}
 
 impl From<std::io::Error> for CompilerError {
     fn from(err: std::io::Error) -> Self {
-        CompilerError::Io(err)
+        CompilerError::Io(err.to_string())
     }
 }
 

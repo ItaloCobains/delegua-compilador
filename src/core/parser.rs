@@ -9,16 +9,22 @@ use crate::core::ast::{Expr, BinaryOp, Statement, Program};
 use crate::core::error::CompilerError;
 use crate::core::token::Position;
 
-/// Parser for the DC language
+/// High-performance parser for the DC language with better error handling
 pub struct Parser<'a> {
     tokens: Vec<Token<'a>>,
     current: usize,
+    /// Static EOF token to avoid temporary references
+    eof_token: Token<'a>,
 }
 
 impl<'a> Parser<'a> {
     /// Creates a new parser with the given tokens
     pub fn new(tokens: Vec<Token<'a>>) -> Self {
-        Parser { tokens, current: 0 }
+        Parser { 
+            tokens, 
+            current: 0,
+            eof_token: Token::EOF(Position::default()),
+        }
     }
 
     /// Helper function to create a token with default position
@@ -31,12 +37,33 @@ impl<'a> Parser<'a> {
         Token::Ident(s, Position { line: 0, column: 0, offset: 0 })
     }
 
-    /// Parses the complete program
+    /// Parses the complete program with error recovery
     pub fn parse(&mut self) -> Result<Program, CompilerError> {
         let mut statements = Vec::new();
+        let mut errors = Vec::new();
 
         while !self.is_at_end() {
-            statements.push(self.parse_statement()?);
+            match self.parse_statement() {
+                Ok(stmt) => statements.push(stmt),
+                Err(err) => {
+                    errors.push(err.clone());
+                    if errors.len() > 10 {
+                        // Too many errors, bail out
+                        return Err(CompilerError::Parser(
+                            format!("Too many parse errors ({}). First error: {}", 
+                                   errors.len(), errors[0])
+                        ));
+                    }
+                    // Error recovery: try to continue parsing
+                    self.synchronize();
+                }
+            }
+        }
+
+        // If we collected any errors but managed to parse some statements,
+        // report the first error
+        if !errors.is_empty() {
+            return Err(errors.into_iter().next().unwrap());
         }
 
         Ok(Program { statements })
@@ -199,41 +226,57 @@ impl<'a> Parser<'a> {
         Ok(Expr::FunctionCall { callee: Box::new(callee), args })
     }
 
-    /// Parses function arguments
+    /// Parses function arguments - optimized with pre-allocation
     fn parse_arguments(&mut self) -> Result<Vec<Expr>, CompilerError> {
-        let mut args = Vec::new();
+        if matches!(self.current_token(), Token::RightParen(_)) {
+            return Ok(Vec::new());
+        }
 
-        if !self.check(Self::token_with_pos(Token::RightParen)) {
-            loop {
-                args.push(self.parse_expression()?);
-                if !self.match_token(Self::token_with_pos(Token::Comma)) {
-                    break;
-                }
+        let mut args = Vec::with_capacity(4); // Pre-allocate for common case
+        
+        loop {
+            args.push(self.parse_expression()?);
+            
+            if matches!(self.current_token(), Token::Comma(_)) {
+                self.advance();
+            } else {
+                break;
             }
         }
 
         Ok(args)
     }
 
-    /// Parses function parameters: (param1, param2, ...)
+    /// Parses function parameters - optimized
     fn parse_parameters(&mut self) -> Result<Vec<String>, CompilerError> {
-        let mut params = Vec::new();
-        if !self.check(Self::token_with_pos(Token::RightParen)) {
-            loop {
-                if let Token::Ident(param, _) = self.current_token() {
+        if matches!(self.current_token(), Token::RightParen(_)) {
+            return Ok(Vec::new());
+        }
+
+        let mut params = Vec::with_capacity(4); // Pre-allocate
+        
+        loop {
+            match self.current_token() {
+                Token::Ident(param, _) => {
                     params.push(param.to_string());
                     self.advance();
-                } else {
-                    return Err(CompilerError::Parser("Expected parameter name".to_string()));
                 }
-
-                if self.match_token(Self::token_with_pos(Token::Comma)) {
-                    continue;
-                } else {
-                    break;
+                _ => {
+                    let pos = self.current_position();
+                    return Err(CompilerError::Parser(
+                        format!("Expected parameter name at line {}, column {}", 
+                               pos.line, pos.column)
+                    ));
                 }
             }
+
+            if matches!(self.current_token(), Token::Comma(_)) {
+                self.advance();
+            } else {
+                break;
+            }
         }
+        
         Ok(params)
     }
 
@@ -242,19 +285,15 @@ impl<'a> Parser<'a> {
         self.parse_comparison()
     }
 
-    /// Parses comparison expressions (<, >, <=, >=, ==, !=)
+    /// Parses comparison expressions (<, >, <=, >=, ==, !=) - optimized
     fn parse_comparison(&mut self) -> Result<Expr, CompilerError> {
         let mut left = self.parse_additive()?;
 
-        while self.match_tokens(&[
-            Self::token_with_pos(Token::Less),
-            Self::token_with_pos(Token::Greater),
-            Self::token_with_pos(Token::LessEqual),
-            Self::token_with_pos(Token::GreaterEqual),
-            Self::token_with_pos(Token::Equal),
-            Self::token_with_pos(Token::NotEqual)
-        ]) {
-            let operator = match self.previous_token() {
+        while matches!(self.current_token(), 
+            Token::Less(_) | Token::Greater(_) | Token::LessEqual(_) | 
+            Token::GreaterEqual(_) | Token::Equal(_) | Token::NotEqual(_)
+        ) {
+            let operator = match self.current_token() {
                 Token::Less(_) => BinaryOp::Less,
                 Token::Greater(_) => BinaryOp::Greater,
                 Token::LessEqual(_) => BinaryOp::LessEqual,
@@ -263,6 +302,7 @@ impl<'a> Parser<'a> {
                 Token::NotEqual(_) => BinaryOp::NotEqual,
                 _ => unreachable!(),
             };
+            self.advance();
 
             let right = self.parse_additive()?;
             left = Expr::Binary {
@@ -275,19 +315,17 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    /// Parses additive expressions (+, -)
+    /// Parses additive expressions (+, -) - optimized
     fn parse_additive(&mut self) -> Result<Expr, CompilerError> {
         let mut left = self.parse_multiplicative()?;
 
-        while self.match_tokens(&[
-            Self::token_with_pos(Token::Plus),
-            Self::token_with_pos(Token::Minus)
-        ]) {
-            let operator = match self.previous_token() {
+        while matches!(self.current_token(), Token::Plus(_) | Token::Minus(_)) {
+            let operator = match self.current_token() {
                 Token::Plus(_) => BinaryOp::Add,
                 Token::Minus(_) => BinaryOp::Subtract,
                 _ => unreachable!(),
             };
+            self.advance();
 
             let right = self.parse_multiplicative()?;
             left = Expr::Binary {
@@ -300,19 +338,17 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    /// Parses multiplicative expressions (*, /)
+    /// Parses multiplicative expressions (*, /) - optimized
     fn parse_multiplicative(&mut self) -> Result<Expr, CompilerError> {
         let mut left = self.parse_unary()?;
 
-        while self.match_tokens(&[
-            Self::token_with_pos(Token::Multiply),
-            Self::token_with_pos(Token::Divide)
-        ]) {
-            let operator = match self.previous_token() {
+        while matches!(self.current_token(), Token::Multiply(_) | Token::Divide(_)) {
+            let operator = match self.current_token() {
                 Token::Multiply(_) => BinaryOp::Multiply,
                 Token::Divide(_) => BinaryOp::Divide,
                 _ => unreachable!(),
             };
+            self.advance();
 
             let right = self.parse_unary()?;
             left = Expr::Binary {
@@ -325,25 +361,23 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    /// Parses unary expressions (-, +)
+    /// Parses unary expressions (-, +) - optimized
     fn parse_unary(&mut self) -> Result<Expr, CompilerError> {
-        if self.match_tokens(&[
-            Self::token_with_pos(Token::Plus),
-            Self::token_with_pos(Token::Minus)
-        ]) {
-            let operator = match self.previous_token() {
-                Token::Plus(_) => BinaryOp::Add, // +x is just x
-                Token::Minus(_) => BinaryOp::Subtract, // -x
-                _ => unreachable!(),
-            };
-
-            let right = self.parse_unary()?;
-            Ok(Expr::Unary {
-                operator,
-                operand: Box::new(right),
-            })
-        } else {
-            self.parse_primary()
+        match self.current_token() {
+            Token::Plus(_) => {
+                self.advance();
+                // +x is just x, so we can skip the unary node
+                self.parse_unary()
+            }
+            Token::Minus(_) => {
+                self.advance();
+                let operand = self.parse_unary()?;
+                Ok(Expr::Unary {
+                    operator: BinaryOp::Subtract,
+                    operand: Box::new(operand),
+                })
+            }
+            _ => self.parse_primary()
         }
     }
 
@@ -425,15 +459,22 @@ impl<'a> Parser<'a> {
 
     // Helper methods
 
-    fn current_token(&self) -> &Token {
-        self.tokens.get(self.current).unwrap_or(&Token::EOF(Position { line: 0, column: 0, offset: 0 }))
+    #[inline]
+    fn current_token(&self) -> &Token<'a> {
+        self.tokens.get(self.current).unwrap_or(&self.eof_token)
     }
 
-    fn previous_token(&self) -> &Token {
-        self.tokens.get(self.current - 1).unwrap_or(&Token::EOF(Position { line: 0, column: 0, offset: 0 }))
+    #[inline]
+    fn previous_token(&self) -> &Token<'a> {
+        if self.current > 0 {
+            self.tokens.get(self.current - 1).unwrap_or(&self.eof_token)
+        } else {
+            &self.eof_token
+        }
     }
 
-    fn advance(&mut self) -> &Token {
+    #[inline]
+    fn advance(&mut self) -> &Token<'a> {
         if !self.is_at_end() {
             self.current += 1;
         }
@@ -450,7 +491,11 @@ impl<'a> Parser<'a> {
             self.advance();
             Ok(result)
         } else {
-            Err(CompilerError::Parser(message.to_string()))
+            let pos = self.current_position();
+            Err(CompilerError::Parser(
+                format!("{} at line {}, column {}. Found: {:?}", 
+                       message, pos.line, pos.column, self.current_token())
+            ))
         }
     }
 
@@ -476,27 +521,51 @@ impl<'a> Parser<'a> {
         }
     }
 
-    fn match_tokens(&mut self, expected: &[Token]) -> bool {
-        for token in expected {
-            if self.check(token.clone()) {
-                self.advance();
-                return true;
-            }
-        }
-        false
-    }
 
+    #[inline]
     fn check(&self, expected: Token) -> bool {
-        !self.is_at_end() && match (self.current_token(), &expected) {
+        !self.is_at_end() && self.token_matches(&expected)
+    }
+    
+    #[inline]
+    fn token_matches(&self, expected: &Token) -> bool {
+        match (self.current_token(), expected) {
             (Token::String(_, _), Token::String(_, _)) => true,
             (Token::Ident(_, _), Token::Ident(_, _)) => true,
             (Token::Number(_, _), Token::Number(_, _)) => true,
-            _ => std::mem::discriminant(self.current_token()) == std::mem::discriminant(&expected),
+            _ => std::mem::discriminant(self.current_token()) == std::mem::discriminant(expected),
         }
     }
 
     fn is_at_end(&self) -> bool {
         matches!(self.current_token(), Token::EOF(_))
+    }
+
+    /// Gets current token position for error reporting
+    fn current_position(&self) -> Position {
+        match self.current_token() {
+            Token::Number(_, pos) | Token::String(_, pos) | Token::Ident(_, pos) |
+            Token::Var(pos) | Token::Escreva(pos) | Token::Import(pos) |
+            Token::Se(pos) | Token::Senao(pos) | Token::EOF(pos) => *pos,
+            _ => Position::default(),
+        }
+    }
+
+    /// Error recovery: synchronize to next statement boundary
+    fn synchronize(&mut self) {
+        self.advance();
+        
+        while !self.is_at_end() {
+            if matches!(self.previous_token(), Token::Semicolon(_)) {
+                return;
+            }
+            
+            match self.current_token() {
+                Token::Var(_) | Token::Funcao(_) | Token::Se(_) |
+                Token::Para(_) | Token::Enquanto(_) | Token::Retorna(_) => return,
+                _ => { self.advance(); }
+            }
+        }
     }
 
     /// Parses an if statement: se condition { statements } [senao se condition { statements }]* [senao { statements }]

@@ -4,7 +4,7 @@
 //! Each token represents a fundamental unit of the language's syntax.
 
 /// Position information for tokens
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Position {
     pub line: u32,
     pub column: u32,

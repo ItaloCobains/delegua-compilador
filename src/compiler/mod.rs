@@ -19,7 +19,7 @@ pub fn compile_file(filename: &str) -> Result<(), CompilerError> {
 
     // Read source file
     let source_code = fs::read_to_string(filename)
-        .map_err(|e| CompilerError::Io(e))?;
+        .map_err(|e| CompilerError::Io(e.to_string()))?;
 
     // Parse source code
     let mut lexer = Lexer::new();
@@ -35,7 +35,7 @@ pub fn compile_file(filename: &str) -> Result<(), CompilerError> {
     // Save LLVM IR
     let ir_filename = format!("{}.ll", filename.trim_end_matches(".delegua").trim_end_matches(".dc"));
     fs::write(&ir_filename, codegen.get_ir())
-        .map_err(|e| CompilerError::Io(e))?;
+        .map_err(|e| CompilerError::Io(e.to_string()))?;
     println!("✓ LLVM IR gerado: {}", ir_filename);
 
     // Generate assembly code
