@@ -1,0 +1,14 @@
+var x = 3;
+x
+escreva("asdf")
+x 
+var x = 3;
+escreva("Reedline funcionando perfeitamente!")
+2 + 3
+var x = 10
+quit
+escreva("Teste de persistência do histórico")
+quit
+escreva("Integração Reedline completa!")
+10 * 2 + 5
+quit

@@ -5,9 +5,9 @@ use inkwell::context::Context;
 use frontend::lexer::Lexer;
 use crate::backend::codegen::CodeGen;
 use crate::frontend::parser::Parser;
+use reedline::{DefaultPrompt, Reedline, Signal, FileBackedHistory};
 use std::env;
 use std::fs;
-use std::io::{self, Write};
 use std::process::Command;
 
 fn main() {
@@ -58,7 +58,7 @@ escreva("A soma é: " + texto(soma));
 
 fn run_repl() {
     println!("=== DC Language REPL ===");
-    println!("Digite expressões ou comandos. Use 'quit' para sair.");
+    println!("Digite expressões ou comandos. Use Ctrl+D para sair.");
     println!("Exemplos:");
     println!("  var x = 10;");
     println!("  escreva(\"Olá mundo!\");");
@@ -68,56 +68,72 @@ fn run_repl() {
     let context = Context::create();
     let mut codegen = CodeGen::new(&context, "repl").unwrap();
 
+    let mut line_editor = Reedline::create();
+    let prompt = DefaultPrompt::default();
+
+    // Adicionar histórico persistente
+    if let Ok(history) = FileBackedHistory::with_file(1000, "dc_history.txt".into()) {
+        line_editor = line_editor.with_history(Box::new(history));
+    }
+
     loop {
-        print!("dc> ");
-        io::stdout().flush().unwrap();
+        let sig = line_editor.read_line(&prompt);
+        match sig {
+            Ok(Signal::Success(buffer)) => {
+                let input = buffer.trim();
 
-        let mut input = String::new();
-        io::stdin().read_line(&mut input).unwrap();
-        let input = input.trim();
+                if input.is_empty() {
+                    continue;
+                }
 
-        if input.is_empty() {
-            continue;
-        }
+                if input == "quit" || input == "exit" {
+                    println!("Saindo do REPL...");
+                    break;
+                }
 
-        if input == "quit" || input == "exit" {
-            println!("Saindo do REPL...");
-            break;
-        }
+                if input == "clear" {
+                    println!("Comando 'clear' não implementado ainda.");
+                    continue;
+                }
 
-        if input == "clear" {
-            println!("Comando 'clear' não implementado ainda.");
-            continue;
-        }
+                if input == "help" {
+                    println!("Comandos disponíveis:");
+                    println!("  quit/exit - Sair do REPL");
+                    println!("  clear - Limpar o contexto");
+                    println!("  help - Mostrar esta ajuda");
+                    println!("  ir - Mostrar o LLVM IR atual");
+                    continue;
+                }
 
-        if input == "help" {
-            println!("Comandos disponíveis:");
-            println!("  quit/exit - Sair do REPL");
-            println!("  clear - Limpar o contexto");
-            println!("  help - Mostrar esta ajuda");
-            println!("  ir - Mostrar o LLVM IR atual");
-            continue;
-        }
+                if input == "ir" {
+                    codegen.print_ir();
+                    continue;
+                }
 
-        if input == "ir" {
-            codegen.print_ir();
-            continue;
-        }
-
-        // Processar a linha diretamente
-        match process_repl_input(input, &mut codegen) {
-            Ok(result) => {
-                if let Some(output) = result {
-                    if !output.is_empty() {
-                        println!("{}", output);
+                // Processar a linha diretamente
+                match process_repl_input(input, &mut codegen) {
+                    Ok(result) => {
+                        match result {
+                            Some(output) => {
+                                if !output.is_empty() && output != "<sem saída>" {
+                                    println!("{}", output);
+                                }
+                            }
+                            None => {
+                                // Não mostrar "OK" para manter o REPL mais limpo
+                            }
+                        }
                     }
-                } else {
-                    println!("OK");
+                    Err(e) => {
+                        println!("Erro: {}", e);
+                    }
                 }
             }
-            Err(e) => {
-                println!("Erro: {}", e);
+            Ok(Signal::CtrlD) | Ok(Signal::CtrlC) => {
+                println!("\nSaindo do REPL...");
+                break;
             }
+            _ => {}
         }
     }
 }
