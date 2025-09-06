@@ -22,7 +22,7 @@ pub fn compile_file(filename: &str) -> Result<(), CompilerError> {
         .map_err(|e| CompilerError::Io(e))?;
 
     // Parse source code
-    let lexer = Lexer::new();
+    let mut lexer = Lexer::new();
     let tokens = lexer.tokenize(&source_code);
     let mut parser = Parser::new(tokens);
     let ast = parser.parse()?;
@@ -89,7 +89,7 @@ mod tests {
 
         // This test would require LLVM tools to be installed
         // For now, we'll just test the parsing part
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let tokens = lexer.tokenize(test_code);
         let mut parser = Parser::new(tokens);
         let ast = parser.parse().unwrap();

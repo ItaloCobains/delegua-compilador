@@ -1130,7 +1130,7 @@ mod tests {
         let context = Context::create();
         let mut codegen = CodeGen::new(&context, "test").unwrap();
 
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let tokens = lexer.tokenize("var a = 42;");
         let mut parser = Parser::new(tokens);
         let program = parser.parse().unwrap();
@@ -1147,7 +1147,7 @@ mod tests {
         let context = Context::create();
         let mut codegen = CodeGen::new(&context, "test").unwrap();
 
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let tokens = lexer.tokenize("var a = 10; var b = 5; var c = 2; var result = a + b * c;");
         let mut parser = Parser::new(tokens);
         let program = parser.parse().unwrap();
@@ -1164,7 +1164,7 @@ mod tests {
         let context = Context::create();
         let mut codegen = CodeGen::new(&context, "test").unwrap();
 
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let tokens = lexer.tokenize("var msg = \"Hello World\";");
         let mut parser = Parser::new(tokens);
         let program = parser.parse().unwrap();
@@ -1180,7 +1180,7 @@ mod tests {
         let context = Context::create();
         let mut codegen = CodeGen::new(&context, "test").unwrap();
 
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let code = r#"
             var a = 10;
             var b = 5;

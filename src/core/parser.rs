@@ -7,17 +7,28 @@
 use crate::core::token::Token;
 use crate::core::ast::{Expr, BinaryOp, Statement, Program};
 use crate::core::error::CompilerError;
+use crate::core::token::Position;
 
 /// Parser for the DC language
-pub struct Parser {
-    tokens: Vec<Token>,
+pub struct Parser<'a> {
+    tokens: Vec<Token<'a>>,
     current: usize,
 }
 
-impl Parser {
+impl<'a> Parser<'a> {
     /// Creates a new parser with the given tokens
-    pub fn new(tokens: Vec<Token>) -> Self {
+    pub fn new(tokens: Vec<Token<'a>>) -> Self {
         Parser { tokens, current: 0 }
+    }
+
+    /// Helper function to create a token with default position
+    fn token_with_pos(token_type: fn(Position) -> Token<'a>) -> Token<'a> {
+        token_type(Position { line: 0, column: 0, offset: 0 })
+    }
+
+    /// Helper function to create an identifier token with default position
+    fn ident_token(s: &'a str) -> Token<'a> {
+        Token::Ident(s, Position { line: 0, column: 0, offset: 0 })
     }
 
     /// Parses the complete program
@@ -45,22 +56,22 @@ impl Parser {
     /// Parses a single statement
     fn parse_statement(&mut self) -> Result<Statement, CompilerError> {
         match self.current_token() {
-            Token::Var => self.parse_variable_declaration(),
-            Token::Escreva => self.parse_function_call_statement(),
-            Token::Import => self.parse_import_statement(),
-            Token::Se => self.parse_if_statement(),
-            Token::Escolha => self.parse_switch_statement(),
-            Token::Enquanto => self.parse_while_statement(),
-            Token::Fazer => self.parse_do_while_statement(),
-            Token::Para => self.parse_for_statement(),
-            Token::ParaCada => self.parse_for_each_statement(),
-            Token::Sustar => self.parse_break_statement(),
-            Token::Continua => self.parse_continue_statement(),
-            Token::Funcao => {
+            Token::Var(_) => self.parse_variable_declaration(),
+            Token::Escreva(_) => self.parse_function_call_statement(),
+            Token::Import(_) => self.parse_import_statement(),
+            Token::Se(_) => self.parse_if_statement(),
+            Token::Escolha(_) => self.parse_switch_statement(),
+            Token::Enquanto(_) => self.parse_while_statement(),
+            Token::Fazer(_) => self.parse_do_while_statement(),
+            Token::Para(_) => self.parse_for_statement(),
+            Token::ParaCada(_) => self.parse_for_each_statement(),
+            Token::Sustar(_) => self.parse_break_statement(),
+            Token::Continua(_) => self.parse_continue_statement(),
+            Token::Funcao(_) => {
                 // Check if this is a named function declaration (funcao name(...))
                 // or an anonymous function in expression context
                 self.advance(); // consume funcao
-                if let Token::Ident(_) = self.current_token() {
+                if let Token::Ident(_, _) = self.current_token() {
                     // Named function declaration
                     self.parse_named_function_declaration()
                 } else {
@@ -68,8 +79,8 @@ impl Parser {
                     Err(CompilerError::Parser("Unexpected 'funcao' in statement context".to_string()))
                 }
             }
-            Token::Retorna => self.parse_return_statement(),
-            Token::Ident(_) => self.parse_assignment_or_call(),
+            Token::Retorna(_) => self.parse_return_statement(),
+            Token::Ident(_, _) => self.parse_assignment_or_call(),
             _ => Err(CompilerError::Parser(format!(
                 "Unexpected token: {:?}", self.current_token()
             ))),
@@ -78,33 +89,38 @@ impl Parser {
 
     /// Parses a variable declaration: var name = expression;
     fn parse_variable_declaration(&mut self) -> Result<Statement, CompilerError> {
-        self.consume(Token::Var, "Expected 'var' keyword")?;
+        self.consume(Self::token_with_pos(Token::Var), "Expected 'var' keyword")?;
 
-        let name = self.consume_identifier("Expected variable name")?;
-        self.consume(Token::Assign, "Expected '=' after variable name")?;
+        if let Token::Ident(name, _) = self.current_token() {
+            let name = name.to_string();
+            self.advance();
 
-        let value = self.parse_expression()?;
-        self.consume(Token::Semicolon, "Expected ';' after variable declaration")?;
+            self.consume(Self::token_with_pos(Token::Assign), "Expected '=' after variable name")?;
+            let initializer = self.parse_expression()?;
+            self.consume(Self::token_with_pos(Token::Semicolon), "Expected ';' after variable declaration")?;
 
-        Ok(Statement::VarDeclaration { name, value })
+            Ok(Statement::VarDeclaration { name, value: initializer })
+        } else {
+            Err(CompilerError::Parser("Expected variable name".to_string()))
+        }
     }
 
     /// Parses an assignment or function call: ident = expr; or ident(args);
     fn parse_assignment_or_call(&mut self) -> Result<Statement, CompilerError> {
         let name = match self.current_token() {
-            Token::Ident(name) => name.clone(),
+            Token::Ident(name, _) => name.to_string(),
             _ => return Err(CompilerError::Parser("Expected identifier".to_string())),
         };
         self.advance();
 
-        if self.match_token(Token::Assign) {
+        if self.match_token(Self::token_with_pos(Token::Assign)) {
             let value = self.parse_expression()?;
-            self.consume(Token::Semicolon, "Expected ';' after assignment")?;
+            self.consume(Self::token_with_pos(Token::Semicolon), "Expected ';' after assignment")?;
             Ok(Statement::Assignment { name, value })
-        } else if self.match_token(Token::LeftParen) {
+        } else if self.match_token(Self::token_with_pos(Token::LeftParen)) {
             let args = self.parse_arguments()?;
-            self.consume(Token::RightParen, "Expected ')' after function arguments")?;
-            self.consume(Token::Semicolon, "Expected ';' after function call")?;
+            self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after function arguments")?;
+            self.consume(Self::token_with_pos(Token::Semicolon), "Expected ';' after function call")?;
             Ok(Statement::FunctionCall(Expr::FunctionCall {
                 callee: Box::new(Expr::Identifier(name)),
                 args,
@@ -119,39 +135,42 @@ impl Parser {
     /// Parses a function call as a statement
     fn parse_function_call_statement(&mut self) -> Result<Statement, CompilerError> {
         let expr = self.parse_function_call()?;
-        self.consume(Token::Semicolon, "Expected ';' after function call")?;
+        self.consume(Self::token_with_pos(Token::Semicolon), "Expected ';' after function call")?;
         Ok(Statement::FunctionCall(expr))
     }
 
     /// Parses an import statement: importar "module" or importar {item1, item2} from "module"
     fn parse_import_statement(&mut self) -> Result<Statement, CompilerError> {
-        self.consume(Token::Import, "Expected 'importar' keyword")?;
+        self.consume(Self::token_with_pos(Token::Import), "Expected 'importar' keyword")?;
 
-        if let Token::String(module) = self.current_token().clone() {
+        if let Token::String(module, _) = self.current_token() {
+            let module = module.to_string();
             self.advance();
-            self.consume(Token::Semicolon, "Expected ';' after import")?;
+            self.consume(Self::token_with_pos(Token::Semicolon), "Expected ';' after import")?;
             Ok(Statement::Import { module, items: None })
-        } else if self.match_token(Token::LeftBrace) {
+        } else if self.match_token(Self::token_with_pos(Token::LeftBrace)) {
             // import {items} from "module"
             let mut items = Vec::new();
-            while !self.check(Token::RightBrace) && !self.is_at_end() {
-                if let Token::Ident(name) = self.current_token().clone() {
+            while !self.check(Self::token_with_pos(Token::RightBrace)) && !self.is_at_end() {
+                if let Token::Ident(name, _) = self.current_token() {
+                    let name = name.to_string();
                     items.push(name);
                     self.advance();
                 } else {
                     return Err(CompilerError::Parser("Expected identifier in import list".to_string()));
                 }
-                if self.match_token(Token::Comma) {
+                if self.match_token(Self::token_with_pos(Token::Comma)) {
                     // continue
-                } else if !self.check(Token::RightBrace) {
+                } else if !self.check(Self::token_with_pos(Token::RightBrace)) {
                     return Err(CompilerError::Parser("Expected ',' or '}' in import list".to_string()));
                 }
             }
-            self.consume(Token::RightBrace, "Expected '}' after import list")?;
-            self.consume(Token::Ident("from".to_string()), "Expected 'from' after import list")?;
-            if let Token::String(module) = self.current_token().clone() {
+            self.consume(Self::token_with_pos(Token::RightBrace), "Expected '}' after import list")?;
+            self.consume(Self::ident_token("from"), "Expected 'from' after import list")?;
+            if let Token::String(module, _) = self.current_token() {
+                let module = module.to_string();
                 self.advance();
-                self.consume(Token::Semicolon, "Expected ';' after import")?;
+                self.consume(Self::token_with_pos(Token::Semicolon), "Expected ';' after import")?;
                 Ok(Statement::Import { module, items: Some(items) })
             } else {
                 Err(CompilerError::Parser("Expected module name after 'from'".to_string()))
@@ -171,11 +190,11 @@ impl Parser {
             return Ok(callee);
         }
 
-        self.consume(Token::LeftParen, "Expected '(' after function name")?;
+        self.consume(Self::token_with_pos(Token::LeftParen), "Expected '(' after function name")?;
 
         let args = self.parse_arguments()?;
 
-        self.consume(Token::RightParen, "Expected ')' after function arguments")?;
+        self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after function arguments")?;
 
         Ok(Expr::FunctionCall { callee: Box::new(callee), args })
     }
@@ -184,10 +203,10 @@ impl Parser {
     fn parse_arguments(&mut self) -> Result<Vec<Expr>, CompilerError> {
         let mut args = Vec::new();
 
-        if !self.check(Token::RightParen) {
+        if !self.check(Self::token_with_pos(Token::RightParen)) {
             loop {
                 args.push(self.parse_expression()?);
-                if !self.match_token(Token::Comma) {
+                if !self.match_token(Self::token_with_pos(Token::Comma)) {
                     break;
                 }
             }
@@ -199,16 +218,16 @@ impl Parser {
     /// Parses function parameters: (param1, param2, ...)
     fn parse_parameters(&mut self) -> Result<Vec<String>, CompilerError> {
         let mut params = Vec::new();
-        if !self.check(Token::RightParen) {
+        if !self.check(Self::token_with_pos(Token::RightParen)) {
             loop {
-                if let Token::Ident(param) = self.current_token() {
-                    params.push(param.clone());
+                if let Token::Ident(param, _) = self.current_token() {
+                    params.push(param.to_string());
                     self.advance();
                 } else {
                     return Err(CompilerError::Parser("Expected parameter name".to_string()));
                 }
 
-                if self.match_token(Token::Comma) {
+                if self.match_token(Self::token_with_pos(Token::Comma)) {
                     continue;
                 } else {
                     break;
@@ -227,14 +246,21 @@ impl Parser {
     fn parse_comparison(&mut self) -> Result<Expr, CompilerError> {
         let mut left = self.parse_additive()?;
 
-        while self.match_tokens(&[Token::Less, Token::Greater, Token::LessEqual, Token::GreaterEqual, Token::Equal, Token::NotEqual]) {
+        while self.match_tokens(&[
+            Self::token_with_pos(Token::Less),
+            Self::token_with_pos(Token::Greater),
+            Self::token_with_pos(Token::LessEqual),
+            Self::token_with_pos(Token::GreaterEqual),
+            Self::token_with_pos(Token::Equal),
+            Self::token_with_pos(Token::NotEqual)
+        ]) {
             let operator = match self.previous_token() {
-                Token::Less => BinaryOp::Less,
-                Token::Greater => BinaryOp::Greater,
-                Token::LessEqual => BinaryOp::LessEqual,
-                Token::GreaterEqual => BinaryOp::GreaterEqual,
-                Token::Equal => BinaryOp::Equal,
-                Token::NotEqual => BinaryOp::NotEqual,
+                Token::Less(_) => BinaryOp::Less,
+                Token::Greater(_) => BinaryOp::Greater,
+                Token::LessEqual(_) => BinaryOp::LessEqual,
+                Token::GreaterEqual(_) => BinaryOp::GreaterEqual,
+                Token::Equal(_) => BinaryOp::Equal,
+                Token::NotEqual(_) => BinaryOp::NotEqual,
                 _ => unreachable!(),
             };
 
@@ -253,10 +279,13 @@ impl Parser {
     fn parse_additive(&mut self) -> Result<Expr, CompilerError> {
         let mut left = self.parse_multiplicative()?;
 
-        while self.match_tokens(&[Token::Plus, Token::Minus]) {
+        while self.match_tokens(&[
+            Self::token_with_pos(Token::Plus),
+            Self::token_with_pos(Token::Minus)
+        ]) {
             let operator = match self.previous_token() {
-                Token::Plus => BinaryOp::Add,
-                Token::Minus => BinaryOp::Subtract,
+                Token::Plus(_) => BinaryOp::Add,
+                Token::Minus(_) => BinaryOp::Subtract,
                 _ => unreachable!(),
             };
 
@@ -275,10 +304,13 @@ impl Parser {
     fn parse_multiplicative(&mut self) -> Result<Expr, CompilerError> {
         let mut left = self.parse_unary()?;
 
-        while self.match_tokens(&[Token::Multiply, Token::Divide]) {
+        while self.match_tokens(&[
+            Self::token_with_pos(Token::Multiply),
+            Self::token_with_pos(Token::Divide)
+        ]) {
             let operator = match self.previous_token() {
-                Token::Multiply => BinaryOp::Multiply,
-                Token::Divide => BinaryOp::Divide,
+                Token::Multiply(_) => BinaryOp::Multiply,
+                Token::Divide(_) => BinaryOp::Divide,
                 _ => unreachable!(),
             };
 
@@ -295,10 +327,13 @@ impl Parser {
 
     /// Parses unary expressions (-, +)
     fn parse_unary(&mut self) -> Result<Expr, CompilerError> {
-        if self.match_tokens(&[Token::Plus, Token::Minus]) {
+        if self.match_tokens(&[
+            Self::token_with_pos(Token::Plus),
+            Self::token_with_pos(Token::Minus)
+        ]) {
             let operator = match self.previous_token() {
-                Token::Plus => BinaryOp::Add, // +x is just x
-                Token::Minus => BinaryOp::Subtract, // -x
+                Token::Plus(_) => BinaryOp::Add, // +x is just x
+                Token::Minus(_) => BinaryOp::Subtract, // -x
                 _ => unreachable!(),
             };
 
@@ -314,42 +349,41 @@ impl Parser {
 
     /// Parses primary expressions (literals, identifiers, function calls, parentheses)
     fn parse_primary(&mut self) -> Result<Expr, CompilerError> {
-        let token = self.current_token().clone();
-
-        match token {
-            Token::Number(n) => {
+        match *self.current_token() {
+            Token::Number(n, _) => {
                 self.advance();
                 Ok(Expr::Number(n))
             }
-            Token::String(s) => {
+            Token::String(ref s, _) => {
+                let s = s.to_string();
                 self.advance();
                 Ok(Expr::String(s))
             }
-            Token::Verdadeiro => {
+            Token::Verdadeiro(_) => {
                 self.advance();
                 Ok(Expr::Bool(true))
             }
-            Token::Falso => {
+            Token::Falso(_) => {
                 self.advance();
                 Ok(Expr::Bool(false))
             }
-            Token::Escreva => {
+            Token::Escreva(_) => {
                 self.advance();
-                self.consume(Token::LeftParen, "Expected '(' after 'escreva'")?;
+                self.consume(Self::token_with_pos(Token::LeftParen), "Expected '(' after 'escreva'")?;
                 let args = self.parse_arguments()?;
-                self.consume(Token::RightParen, "Expected ')' after function arguments")?;
+                self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after function arguments")?;
                 Ok(Expr::FunctionCall {
                     callee: Box::new(Expr::Identifier("escreva".to_string())),
                     args,
                 })
             }
-            Token::Ident(name) => {
-                let name = name.clone();
+            Token::Ident(name, _) => {
+                let name = name.to_string();
                 self.advance();
 
-                if self.match_token(Token::LeftParen) {
+                if self.match_token(Self::token_with_pos(Token::LeftParen)) {
                     let args = self.parse_arguments()?;
-                    self.consume(Token::RightParen, "Expected ')' after function arguments")?;
+                    self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after function arguments")?;
                     Ok(Expr::FunctionCall {
                         callee: Box::new(Expr::Identifier(name)),
                         args,
@@ -358,33 +392,33 @@ impl Parser {
                     Ok(Expr::Identifier(name))
                 }
             }
-            Token::Funcao => {
+            Token::Funcao(_) => {
                 self.advance();
-                self.consume(Token::LeftParen, "Expected '(' after 'funcao'")?;
+                self.consume(Self::token_with_pos(Token::LeftParen), "Expected '(' after 'funcao'")?;
                 let params = self.parse_parameters()?;
-                self.consume(Token::RightParen, "Expected ')' after parameters")?;
-                self.consume(Token::LeftBrace, "Expected '{' after function signature")?;
+                self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after parameters")?;
+                self.consume(Self::token_with_pos(Token::LeftBrace), "Expected '{' after function signature")?;
                 let body = self.parse_block()?;
                 Ok(Expr::Function { params, body })
             }
-            Token::Texto => {
+            Token::Texto(_) => {
                 self.advance();
-                self.consume(Token::LeftParen, "Expected '(' after 'texto'")?;
+                self.consume(Self::token_with_pos(Token::LeftParen), "Expected '(' after 'texto'")?;
                 let args = self.parse_arguments()?;
-                self.consume(Token::RightParen, "Expected ')' after function arguments")?;
+                self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after function arguments")?;
                 Ok(Expr::FunctionCall {
                     callee: Box::new(Expr::Identifier("texto".to_string())),
                     args,
                 })
             }
-            Token::LeftParen => {
+            Token::LeftParen(_) => {
                 self.advance();
                 let expr = self.parse_expression()?;
-                self.consume(Token::RightParen, "Expected ')' after expression")?;
+                self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after expression")?;
                 Ok(expr)
             }
             _ => Err(CompilerError::Parser(format!(
-                "Unexpected token in expression: {:?}", token
+                "Unexpected token in expression: {:?}", self.current_token()
             ))),
         }
     }
@@ -392,11 +426,11 @@ impl Parser {
     // Helper methods
 
     fn current_token(&self) -> &Token {
-        self.tokens.get(self.current).unwrap_or(&Token::EOF)
+        self.tokens.get(self.current).unwrap_or(&Token::EOF(Position { line: 0, column: 0, offset: 0 }))
     }
 
     fn previous_token(&self) -> &Token {
-        self.tokens.get(self.current - 1).unwrap_or(&Token::EOF)
+        self.tokens.get(self.current - 1).unwrap_or(&Token::EOF(Position { line: 0, column: 0, offset: 0 }))
     }
 
     fn advance(&mut self) -> &Token {
@@ -408,13 +442,13 @@ impl Parser {
 
     fn consume(&mut self, expected: Token, message: &str) -> Result<String, CompilerError> {
         if self.check(expected.clone()) {
-            let token = self.current_token().clone();
+            let result = match self.current_token() {
+                Token::Ident(name, _) => name.to_string(),
+                Token::String(s, _) => s.to_string(),
+                _ => String::new(),
+            };
             self.advance();
-            match token {
-                Token::Ident(name) => Ok(name),
-                Token::String(s) => Ok(s),
-                _ => Ok(String::new()),
-            }
+            Ok(result)
         } else {
             Err(CompilerError::Parser(message.to_string()))
         }
@@ -422,8 +456,8 @@ impl Parser {
 
     fn consume_identifier(&mut self, message: &str) -> Result<String, CompilerError> {
         match self.current_token() {
-            Token::Ident(name) => {
-                let name = name.clone();
+            Token::Ident(name, _) => {
+                let name = name.to_string();
                 self.advance();
                 Ok(name)
             }
@@ -454,38 +488,38 @@ impl Parser {
 
     fn check(&self, expected: Token) -> bool {
         !self.is_at_end() && match (self.current_token(), &expected) {
-            (Token::String(_), Token::String(_)) => true,
-            (Token::Ident(_), Token::Ident(_)) => true,
-            (Token::Number(_), Token::Number(_)) => true,
+            (Token::String(_, _), Token::String(_, _)) => true,
+            (Token::Ident(_, _), Token::Ident(_, _)) => true,
+            (Token::Number(_, _), Token::Number(_, _)) => true,
             _ => std::mem::discriminant(self.current_token()) == std::mem::discriminant(&expected),
         }
     }
 
     fn is_at_end(&self) -> bool {
-        matches!(self.current_token(), Token::EOF)
+        matches!(self.current_token(), Token::EOF(_))
     }
 
     /// Parses an if statement: se condition { statements } [senao se condition { statements }]* [senao { statements }]
     fn parse_if_statement(&mut self) -> Result<Statement, CompilerError> {
-        self.consume(Token::Se, "Expected 'se' keyword")?;
+        self.consume(Self::token_with_pos(Token::Se), "Expected 'se' keyword")?;
         let condition = self.parse_expression()?;
-        self.consume(Token::LeftBrace, "Expected '{' after condition")?;
+        self.consume(Self::token_with_pos(Token::LeftBrace), "Expected '{' after condition")?;
         let then_branch = self.parse_block()?;
 
         let mut else_if_branches = Vec::new();
         let mut else_branch = None;
 
         // Check for else-if branches
-        while self.match_token(Token::SenaoSe) {
+        while self.match_token(Self::token_with_pos(Token::SenaoSe)) {
             let else_if_condition = self.parse_expression()?;
-            self.consume(Token::LeftBrace, "Expected '{' after else-if condition")?;
+            self.consume(Self::token_with_pos(Token::LeftBrace), "Expected '{' after else-if condition")?;
             let else_if_statements = self.parse_block()?;
             else_if_branches.push((else_if_condition, else_if_statements));
         }
 
         // Check for else branch
-        if self.match_token(Token::Senao) {
-            self.consume(Token::LeftBrace, "Expected '{' after 'senao'")?;
+        if self.match_token(Self::token_with_pos(Token::Senao)) {
+            self.consume(Self::token_with_pos(Token::LeftBrace), "Expected '{' after 'senao'")?;
             else_branch = Some(self.parse_block()?);
         }
 
@@ -507,30 +541,30 @@ impl Parser {
 
     /// Parses a switch statement: escolha value { caso value: statements* [padrao: statements] }
     fn parse_switch_statement(&mut self) -> Result<Statement, CompilerError> {
-        self.consume(Token::Escolha, "Expected 'escolha' keyword")?;
+        self.consume(Self::token_with_pos(Token::Escolha), "Expected 'escolha' keyword")?;
         let value = self.parse_expression()?;
-        self.consume(Token::LeftBrace, "Expected '{' after switch value")?;
+        self.consume(Self::token_with_pos(Token::LeftBrace), "Expected '{' after switch value")?;
 
         let mut cases = Vec::new();
         let mut default = None;
 
-        while !self.check(Token::RightBrace) && !self.is_at_end() {
-            if self.match_token(Token::Caso) {
+        while !self.check(Self::token_with_pos(Token::RightBrace)) && !self.is_at_end() {
+            if self.match_token(Self::token_with_pos(Token::Caso)) {
                 let case_value = self.parse_expression()?;
-                self.consume(Token::Colon, "Expected ':' after case value")?;
+                self.consume(Self::token_with_pos(Token::Colon), "Expected ':' after case value")?;
                 let mut case_statements = Vec::new();
 
                 // Parse multiple statements until next case, default, or end of switch
-                while !self.check(Token::Caso) && !self.check(Token::Padrao) && !self.check(Token::RightBrace) && !self.is_at_end() {
+                while !self.check(Self::token_with_pos(Token::Caso)) && !self.check(Self::token_with_pos(Token::Padrao)) && !self.check(Self::token_with_pos(Token::RightBrace)) && !self.is_at_end() {
                     case_statements.push(self.parse_statement()?);
                 }
 
                 cases.push((case_value, case_statements));
-            } else if self.match_token(Token::Padrao) {
-                self.consume(Token::Colon, "Expected ':' after 'padrao'")?;
+            } else if self.match_token(Self::token_with_pos(Token::Padrao)) {
+                self.consume(Self::token_with_pos(Token::Colon), "Expected ':' after 'padrao'")?;
                 let mut default_statements = Vec::new();
 
-                while !self.check(Token::RightBrace) && !self.is_at_end() {
+                while !self.check(Self::token_with_pos(Token::RightBrace)) && !self.is_at_end() {
                     default_statements.push(self.parse_statement()?);
                 }
 
@@ -540,7 +574,7 @@ impl Parser {
             }
         }
 
-        self.consume(Token::RightBrace, "Expected '}' after switch body")?;
+        self.consume(Self::token_with_pos(Token::RightBrace), "Expected '}' after switch body")?;
 
         Ok(Statement::Switch {
             value,
@@ -551,9 +585,9 @@ impl Parser {
 
     /// Parses a while statement: enquanto condition { statements }
     fn parse_while_statement(&mut self) -> Result<Statement, CompilerError> {
-        self.consume(Token::Enquanto, "Expected 'enquanto' keyword")?;
+        self.consume(Self::token_with_pos(Token::Enquanto), "Expected 'enquanto' keyword")?;
         let condition = self.parse_expression()?;
-        self.consume(Token::LeftBrace, "Expected '{' after condition")?;
+        self.consume(Self::token_with_pos(Token::LeftBrace), "Expected '{' after condition")?;
         let body = self.parse_block()?;
 
         Ok(Statement::While { condition, body })
@@ -561,10 +595,10 @@ impl Parser {
 
     /// Parses a do-while statement: fazer { statements } enquanto condition
     fn parse_do_while_statement(&mut self) -> Result<Statement, CompilerError> {
-        self.consume(Token::Fazer, "Expected 'fazer' keyword")?;
-        self.consume(Token::LeftBrace, "Expected '{' after 'fazer'")?;
+        self.consume(Self::token_with_pos(Token::Fazer), "Expected 'fazer' keyword")?;
+        self.consume(Self::token_with_pos(Token::LeftBrace), "Expected '{' after 'fazer'")?;
         let body = self.parse_block()?;
-        self.consume(Token::Enquanto, "Expected 'enquanto' after do block")?;
+        self.consume(Self::token_with_pos(Token::Enquanto), "Expected 'enquanto' after do block")?;
         let condition = self.parse_expression()?;
 
         Ok(Statement::DoWhile { body, condition })
@@ -572,43 +606,43 @@ impl Parser {
 
     /// Parses a for statement: para [initializer]; [condition]; [increment] { statements }
     fn parse_for_statement(&mut self) -> Result<Statement, CompilerError> {
-        self.consume(Token::Para, "Expected 'para' keyword")?;
+        self.consume(Self::token_with_pos(Token::Para), "Expected 'para' keyword")?;
 
-        let initializer = if self.match_token(Token::Var) {
+        let initializer = if self.match_token(Self::token_with_pos(Token::Var)) {
             let name = self.consume_identifier("Expected variable name")?;
-            self.consume(Token::Assign, "Expected '=' after variable name")?;
+            self.consume(Self::token_with_pos(Token::Assign), "Expected '=' after variable name")?;
             let value = self.parse_expression()?;
             Some(Box::new(Statement::VarDeclaration { name, value }))
-        } else if self.match_token(Token::Semicolon) {
+        } else if self.match_token(Self::token_with_pos(Token::Semicolon)) {
             None
         } else {
             return Err(CompilerError::Parser("Expected variable declaration or ';' in for loop".to_string()));
         };
-        self.consume(Token::Semicolon, "Expected ';' after initializer")?;
+        self.consume(Self::token_with_pos(Token::Semicolon), "Expected ';' after initializer")?;
 
-        let condition = if !self.check(Token::Semicolon) && !self.check(Token::LeftBrace) {
+        let condition = if !self.check(Self::token_with_pos(Token::Semicolon)) && !self.check(Self::token_with_pos(Token::LeftBrace)) {
             Some(self.parse_expression()?)
         } else {
             None
         };
         
         // Optional semicolon after condition
-        if self.check(Token::Semicolon) {
+        if self.check(Self::token_with_pos(Token::Semicolon)) {
             self.advance();
         }
 
-        let increment = if !self.check(Token::LeftBrace) {
+        let increment = if !self.check(Self::token_with_pos(Token::LeftBrace)) {
             Some(self.parse_expression()?)
         } else {
             None
         };
         
         // Optional semicolon after increment
-        if self.check(Token::Semicolon) {
+        if self.check(Self::token_with_pos(Token::Semicolon)) {
             self.advance();
         }
 
-        self.consume(Token::LeftBrace, "Expected '{' after for header")?;
+        self.consume(Self::token_with_pos(Token::LeftBrace), "Expected '{' after for header")?;
         let body = self.parse_block()?;
 
         Ok(Statement::For { initializer, condition, increment, body })
@@ -616,11 +650,11 @@ impl Parser {
 
     /// Parses a for-each statement: para cada variable in iterable { statements }
     fn parse_for_each_statement(&mut self) -> Result<Statement, CompilerError> {
-        self.consume(Token::ParaCada, "Expected 'para cada' keyword")?;
+        self.consume(Self::token_with_pos(Token::ParaCada), "Expected 'para cada' keyword")?;
         let variable = self.consume_identifier("Expected variable name")?;
-        self.consume(Token::Ident("de".to_string()), "Expected 'de' after variable")?;
+        self.consume(Self::ident_token("de"), "Expected 'de' after variable")?;
         let iterable = self.parse_expression()?;
-        self.consume(Token::LeftBrace, "Expected '{' after iterable")?;
+        self.consume(Self::token_with_pos(Token::LeftBrace), "Expected '{' after iterable")?;
         let body = self.parse_block()?;
 
         Ok(Statement::ForEach { variable, iterable, body })
@@ -628,13 +662,13 @@ impl Parser {
 
     /// Parses a break statement: sustar
     fn parse_break_statement(&mut self) -> Result<Statement, CompilerError> {
-        self.consume(Token::Sustar, "Expected 'sustar' keyword")?;
+        self.consume(Self::token_with_pos(Token::Sustar), "Expected 'sustar' keyword")?;
         Ok(Statement::Break)
     }
 
     /// Parses a continue statement: continua
     fn parse_continue_statement(&mut self) -> Result<Statement, CompilerError> {
-        self.consume(Token::Continua, "Expected 'continua' keyword")?;
+        self.consume(Self::token_with_pos(Token::Continua), "Expected 'continua' keyword")?;
         Ok(Statement::Continue)
     }
 
@@ -642,11 +676,11 @@ impl Parser {
     fn parse_block(&mut self) -> Result<Vec<Statement>, CompilerError> {
         let mut statements = Vec::new();
 
-        while !self.check(Token::RightBrace) && !self.is_at_end() {
+        while !self.check(Self::token_with_pos(Token::RightBrace)) && !self.is_at_end() {
             statements.push(self.parse_statement()?);
         }
 
-        self.consume(Token::RightBrace, "Expected '}' after block")?;
+        self.consume(Self::token_with_pos(Token::RightBrace), "Expected '}' after block")?;
         Ok(statements)
     }
 
@@ -654,14 +688,14 @@ impl Parser {
     fn parse_named_function_declaration(&mut self) -> Result<Statement, CompilerError> {
         // At this point, 'funcao' has already been consumed
         let name = self.consume_identifier("Expected function name")?;
-        self.consume(Token::LeftParen, "Expected '(' after function name")?;
+        self.consume(Self::token_with_pos(Token::LeftParen), "Expected '(' after function name")?;
 
         let mut params = Vec::new();
-        if !self.check(Token::RightParen) {
+        if !self.check(Self::token_with_pos(Token::RightParen)) {
             loop {
                 params.push(self.consume_identifier("Expected parameter name")?);
 
-                if self.match_token(Token::Comma) {
+                if self.match_token(Self::token_with_pos(Token::Comma)) {
                     continue;
                 } else {
                     break;
@@ -669,8 +703,8 @@ impl Parser {
             }
         }
 
-        self.consume(Token::RightParen, "Expected ')' after parameters")?;
-        self.consume(Token::LeftBrace, "Expected '{' after function signature")?;
+        self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after parameters")?;
+        self.consume(Self::token_with_pos(Token::LeftBrace), "Expected '{' after function signature")?;
 
         let body = self.parse_block()?;
 
@@ -679,15 +713,15 @@ impl Parser {
 
     /// Parses a return statement: retorna [expression];
     fn parse_return_statement(&mut self) -> Result<Statement, CompilerError> {
-        self.consume(Token::Retorna, "Expected 'retorna' keyword")?;
+        self.consume(Self::token_with_pos(Token::Retorna), "Expected 'retorna' keyword")?;
 
-        let value = if self.check(Token::Semicolon) {
+        let value = if self.check(Self::token_with_pos(Token::Semicolon)) {
             None
         } else {
             Some(self.parse_expression()?)
         };
 
-        self.consume(Token::Semicolon, "Expected ';' after return statement")?;
+        self.consume(Self::token_with_pos(Token::Semicolon), "Expected ';' after return statement")?;
 
         Ok(Statement::Return(value))
     }
@@ -700,7 +734,7 @@ mod tests {
 
     #[test]
     fn test_parse_variable_declaration() {
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let tokens = lexer.tokenize("var x = 42;");
         let mut parser = Parser::new(tokens);
 
@@ -718,7 +752,7 @@ mod tests {
 
     #[test]
     fn test_parse_arithmetic_expression() {
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let tokens = lexer.tokenize("2 + 3 * 4");
         let mut parser = Parser::new(tokens);
 
@@ -736,7 +770,7 @@ mod tests {
 
     #[test]
     fn test_parse_function_call() {
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let tokens = lexer.tokenize("escreva(\"Hello\")");
         let mut parser = Parser::new(tokens);
 
@@ -749,7 +783,7 @@ mod tests {
 
     #[test]
     fn test_parse_complex_program() {
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let code = r#"
             var a = 10;
             var b = 5;

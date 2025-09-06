@@ -148,7 +148,7 @@ impl Repl {
         }
 
         // Try to parse as expression first
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let tokens = lexer.tokenize(input);
         let mut parser = Parser::new(tokens.clone());
 
@@ -190,7 +190,7 @@ impl Repl {
     /// Evaluates a write function call
     fn evaluate_write_call(&mut self, input: &str) -> Result<Option<String>, CompilerError> {
         let code_with_semicolon = format!("{};", input);
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let tokens = lexer.tokenize(&code_with_semicolon);
         let mut parser = Parser::new(tokens);
         let program = parser.parse()?;

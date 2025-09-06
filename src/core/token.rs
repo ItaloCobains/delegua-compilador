@@ -3,65 +3,97 @@
 //! Defines the lexical tokens that make up the DC language.
 //! Each token represents a fundamental unit of the language's syntax.
 
-/// Represents a lexical token in the DC language
-#[derive(Debug, PartialEq, Clone)]
-pub enum Token {
-    /// Integer literal (e.g., 42)
-    Number(i64),
+/// Position information for tokens
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Position {
+    pub line: u32,
+    pub column: u32,
+    pub offset: usize,
+}
 
-    /// String literal (e.g., "hello")
-    String(String),
+/// Represents a lexical token in the DC language with position information
+#[derive(Debug, PartialEq, Clone)]
+pub enum Token<'a> {
+    /// Integer literal (e.g., 42)
+    Number(i64, Position),
+
+    /// String literal (e.g., "hello") - zero-copy using string slice
+    String(&'a str, Position),
 
     /// Boolean literals
-    Verdadeiro, Falso,
+    Verdadeiro(Position),
+    Falso(Position),
 
-    /// Identifier (variable names, function names)
-    Ident(String),
+    /// Identifier (variable names, function names) - zero-copy using string slice
+    Ident(&'a str, Position),
 
     /// Variable declaration keyword
-    Var,
+    Var(Position),
 
     /// Print function keyword
-    Escreva,
+    Escreva(Position),
 
     /// String conversion function keyword
-    Texto,
+    Texto(Position),
 
     /// Import keyword
-    Import,
+    Import(Position),
 
     /// Conditional keywords
-    Se, Senao, SenaoSe,
-    Escolha, Caso, Padrao,
+    Se(Position),
+    Senao(Position),
+    SenaoSe(Position),
+    Escolha(Position),
+    Caso(Position),
+    Padrao(Position),
 
     /// Loop keywords
-    Enquanto, Fazer, Para, ParaCada, Sustar, Continua,
+    Enquanto(Position),
+    Fazer(Position),
+    Para(Position),
+    ParaCada(Position),
+    Sustar(Position),
+    Continua(Position),
 
     /// Function keywords
-    Funcao, Retorna,
+    Funcao(Position),
+    Retorna(Position),
 
     /// Comparison operators
-    Equal, NotEqual, Less, Greater, LessEqual, GreaterEqual,
+    Equal(Position),
+    NotEqual(Position),
+    Less(Position),
+    Greater(Position),
+    LessEqual(Position),
+    GreaterEqual(Position),
 
     /// Arithmetic operators
-    Plus, Minus, Multiply, Divide,
+    Plus(Position),
+    Minus(Position),
+    Multiply(Position),
+    Divide(Position),
 
     /// Assignment operator
-    Assign,
+    Assign(Position),
 
     /// Statement terminator
-    Semicolon,
+    Semicolon(Position),
 
     /// Grouping symbols
-    LeftParen, RightParen,
-    LeftBrace, RightBrace,
+    LeftParen(Position),
+    RightParen(Position),
+    LeftBrace(Position),
+    RightBrace(Position),
 
     /// Comma separator
-    Comma,
+    Comma(Position),
 
     /// Colon separator
-    Colon,
+    Colon(Position),
 
     /// End of file marker
-    EOF,
+    EOF(Position),
+
+    /// Error token for invalid characters
+    Error(char, Position),
 }

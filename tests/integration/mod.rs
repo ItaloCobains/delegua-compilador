@@ -25,7 +25,7 @@ mod integration_tests {
         "#;
 
         // Full pipeline test
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let tokens = lexer.tokenize(program);
         let mut parser = Parser::new(tokens);
         let ast = parser.parse().unwrap();
@@ -54,7 +54,7 @@ mod integration_tests {
             escreva("New value: " + texto(b));
         "#;
 
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let tokens = lexer.tokenize(program);
         let mut parser = Parser::new(tokens);
         let ast = parser.parse().unwrap();
@@ -81,7 +81,7 @@ mod integration_tests {
             escreva("Complex result: " + texto(result));
         "#;
 
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let tokens = lexer.tokenize(program);
         let mut parser = Parser::new(tokens);
         let ast = parser.parse().unwrap();
@@ -106,7 +106,7 @@ mod integration_tests {
             escreva(message);
         "#;
 
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let tokens = lexer.tokenize(program);
         let mut parser = Parser::new(tokens);
         let ast = parser.parse().unwrap();
@@ -131,7 +131,7 @@ mod integration_tests {
             escreva("Final x: " + texto(x));
         "#;
 
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let tokens = lexer.tokenize(program);
         let mut parser = Parser::new(tokens);
         let ast = parser.parse().unwrap();
@@ -145,7 +145,7 @@ mod integration_tests {
 
     #[test]
     fn test_error_handling() {
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
 
         // Test invalid syntax
         let invalid_code = "var x = ;";
@@ -161,7 +161,7 @@ mod integration_tests {
         let mut codegen = CodeGen::new(&context, "empty_test").unwrap();
 
         let program = "";
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let tokens = lexer.tokenize(program);
         let mut parser = Parser::new(tokens);
         let ast = parser.parse().unwrap();
@@ -184,7 +184,7 @@ mod integration_tests {
             escreva("Large number: " + texto(big_num));
         "#;
 
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let tokens = lexer.tokenize(program);
         let mut parser = Parser::new(tokens);
         let ast = parser.parse().unwrap();
@@ -207,7 +207,7 @@ mod integration_tests {
             escreva("Third message");
         "#;
 
-        let lexer = Lexer::new();
+        let mut lexer = Lexer::new();
         let tokens = lexer.tokenize(program);
         let mut parser = Parser::new(tokens);
         let ast = parser.parse().unwrap();
