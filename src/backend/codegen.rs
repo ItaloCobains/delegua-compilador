@@ -371,7 +371,7 @@ mod tests {
         let mut codegen = CodeGen::new(&context, "test").unwrap();
 
         let lexer = Lexer::new();
-        let tokens = lexer.tokenize("var result = 10 + 5 * 2;");
+        let tokens = lexer.tokenize("var a = 10; var b = 5; var c = 2; var result = a + b * c;");
         let mut parser = Parser::new(tokens);
         let program = parser.parse().unwrap();
 
