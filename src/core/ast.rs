@@ -13,6 +13,9 @@ pub enum Expr {
     /// String literal
     String(String),
 
+    /// Boolean literal
+    Bool(bool),
+
     /// Variable reference
     Identifier(String),
 
@@ -85,6 +88,39 @@ pub enum Statement {
         cases: Vec<(Expr, Vec<Statement>)>,
         default: Option<Vec<Statement>>,
     },
+
+    /// While loop
+    While {
+        condition: Expr,
+        body: Vec<Statement>,
+    },
+
+    /// Do-while loop
+    DoWhile {
+        body: Vec<Statement>,
+        condition: Expr,
+    },
+
+    /// For loop
+    For {
+        initializer: Option<Box<Statement>>,
+        condition: Option<Expr>,
+        increment: Option<Expr>,
+        body: Vec<Statement>,
+    },
+
+    /// For-each loop
+    ForEach {
+        variable: String,
+        iterable: Expr,
+        body: Vec<Statement>,
+    },
+
+    /// Break statement
+    Break,
+
+    /// Continue statement
+    Continue,
 
     /// Function call as a statement
     FunctionCall(Expr),

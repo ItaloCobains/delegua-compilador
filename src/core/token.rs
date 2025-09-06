@@ -12,6 +12,9 @@ pub enum Token {
     /// String literal (e.g., "hello")
     String(String),
 
+    /// Boolean literals
+    Verdadeiro, Falso,
+
     /// Identifier (variable names, function names)
     Ident(String),
 
@@ -30,6 +33,9 @@ pub enum Token {
     /// Conditional keywords
     Se, Senao, SenaoSe,
     Escolha, Caso, Padrao,
+
+    /// Loop keywords
+    Enquanto, Fazer, Para, ParaCada, Sustar, Continua,
 
     /// Comparison operators
     Equal, NotEqual, Less, Greater, LessEqual, GreaterEqual,

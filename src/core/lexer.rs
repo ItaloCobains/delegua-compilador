@@ -209,6 +209,55 @@ impl Lexer {
             "escolha" => Token::Escolha,
             "caso" => Token::Caso,
             "padrao" => Token::Padrao,
+            "enquanto" => Token::Enquanto,
+            "fazer" => Token::Fazer,
+            "para" => {
+                // Check for "para cada"
+                if let Some(next_char) = chars.peek() {
+                    if next_char.is_whitespace() {
+                        let mut temp_chars = chars.clone();
+                        while let Some(&ch) = temp_chars.peek() {
+                            if ch.is_whitespace() {
+                                temp_chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                        let mut next_word = String::new();
+                        while let Some(&ch) = temp_chars.peek() {
+                            if ch.is_alphabetic() {
+                                next_word.push(ch);
+                                temp_chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                        if next_word == "cada" {
+                            while let Some(&ch) = chars.peek() {
+                                if ch.is_whitespace() {
+                                    chars.next();
+                                } else {
+                                    break;
+                                }
+                            }
+                            for _ in 0.."cada".len() {
+                                chars.next();
+                            }
+                            Token::ParaCada
+                        } else {
+                            Token::Para
+                        }
+                    } else {
+                        Token::Para
+                    }
+                } else {
+                    Token::Para
+                }
+            },
+            "sustar" => Token::Sustar,
+            "continua" => Token::Continua,
+            "verdadeiro" => Token::Verdadeiro,
+            "falso" => Token::Falso,
             _ => Token::Ident(ident),
         }
     }

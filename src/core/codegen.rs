@@ -141,6 +141,24 @@ impl<'ctx> CodeGen<'ctx> {
             Statement::Switch { value, cases, default } => {
                 self.generate_switch_statement(value, cases, default.as_ref())
             }
+            Statement::While { condition, body } => {
+                self.generate_while_statement(condition, body)
+            }
+            Statement::DoWhile { body, condition } => {
+                self.generate_do_while_statement(body, condition)
+            }
+            Statement::For { initializer, condition, increment, body } => {
+                self.generate_for_statement(initializer.as_ref().map(|v| &**v), condition.as_ref(), increment.as_ref(), body)
+            }
+            Statement::ForEach { variable, iterable, body } => {
+                self.generate_for_each_statement(variable, iterable, body)
+            }
+            Statement::Break => {
+                self.generate_break_statement()
+            }
+            Statement::Continue => {
+                self.generate_continue_statement()
+            }
             Statement::FunctionCall(expr) => {
                 self.generate_expression(expr)?;
                 Ok(())
@@ -228,6 +246,11 @@ impl<'ctx> CodeGen<'ctx> {
                 global.set_initializer(&string_val);
                 let ptr = global.as_pointer_value();
                 Ok(ptr.into())
+            }
+
+            Expr::Bool(b) => {
+                let val = self.i64_type.const_int(if *b { 1 } else { 0 }, false);
+                Ok(val.into())
             }
 
             Expr::Identifier(name) => {
@@ -705,6 +728,180 @@ impl<'ctx> CodeGen<'ctx> {
         } else {
             Ok(())
         }
+    }
+
+    /// Generates code for while statement
+    fn generate_while_statement(&mut self, condition: &Expr, body: &[Statement]) -> Result<(), CompilerError> {
+        let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        
+        let loop_bb = self.context.append_basic_block(current_function, "loop");
+        let body_bb = self.context.append_basic_block(current_function, "loop_body");
+        let after_bb = self.context.append_basic_block(current_function, "after_loop");
+        
+        // Jump to loop condition
+        self.builder.build_unconditional_branch(loop_bb).unwrap();
+        
+        // Generate loop condition
+        self.builder.position_at_end(loop_bb);
+        let condition_val = self.generate_expression(condition)?;
+        let condition_bool = match condition_val {
+            BasicValueEnum::IntValue(val) => {
+                if val.get_type().get_bit_width() == 1 {
+                    val
+                } else {
+                    let zero = self.i64_type.const_int(0, false);
+                    self.builder.build_int_compare(
+                        inkwell::IntPredicate::NE,
+                        val,
+                        zero,
+                        "loop_condition"
+                    ).unwrap()
+                }
+            }
+            _ => return Err(CompilerError::CodeGen("While condition must be integer".to_string())),
+        };
+        
+        self.builder.build_conditional_branch(condition_bool, body_bb, after_bb).unwrap();
+        
+        // Generate loop body
+        self.builder.position_at_end(body_bb);
+        for stmt in body {
+            self.generate_statement(stmt)?;
+        }
+        self.builder.build_unconditional_branch(loop_bb).unwrap();
+        
+        self.builder.position_at_end(after_bb);
+        Ok(())
+    }
+
+    /// Generates code for do-while statement
+    fn generate_do_while_statement(&mut self, body: &[Statement], condition: &Expr) -> Result<(), CompilerError> {
+        let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        
+        let body_bb = self.context.append_basic_block(current_function, "do_body");
+        let condition_bb = self.context.append_basic_block(current_function, "do_condition");
+        let after_bb = self.context.append_basic_block(current_function, "after_do");
+        
+        // Jump to body
+        self.builder.build_unconditional_branch(body_bb).unwrap();
+        
+        // Generate loop body
+        self.builder.position_at_end(body_bb);
+        for stmt in body {
+            self.generate_statement(stmt)?;
+        }
+        self.builder.build_unconditional_branch(condition_bb).unwrap();
+        
+        // Generate condition
+        self.builder.position_at_end(condition_bb);
+        let condition_val = self.generate_expression(condition)?;
+        let condition_bool = match condition_val {
+            BasicValueEnum::IntValue(val) => {
+                if val.get_type().get_bit_width() == 1 {
+                    val
+                } else {
+                    let zero = self.i64_type.const_int(0, false);
+                    self.builder.build_int_compare(
+                        inkwell::IntPredicate::NE,
+                        val,
+                        zero,
+                        "do_condition"
+                    ).unwrap()
+                }
+            }
+            _ => return Err(CompilerError::CodeGen("Do-while condition must be integer".to_string())),
+        };
+        
+        self.builder.build_conditional_branch(condition_bool, body_bb, after_bb).unwrap();
+        
+        self.builder.position_at_end(after_bb);
+        Ok(())
+    }
+
+    /// Generates code for for statement
+    fn generate_for_statement(&mut self, initializer: Option<&Statement>, condition: Option<&Expr>, increment: Option<&Expr>, body: &[Statement]) -> Result<(), CompilerError> {
+        let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        
+        let init_bb = self.context.append_basic_block(current_function, "for_init");
+        let condition_bb = self.context.append_basic_block(current_function, "for_condition");
+        let body_bb = self.context.append_basic_block(current_function, "for_body");
+        let increment_bb = self.context.append_basic_block(current_function, "for_increment");
+        let after_bb = self.context.append_basic_block(current_function, "after_for");
+        
+        // Jump to initializer
+        self.builder.build_unconditional_branch(init_bb).unwrap();
+        
+        // Generate initializer
+        self.builder.position_at_end(init_bb);
+        if let Some(init_stmt) = initializer {
+            self.generate_statement(init_stmt)?;
+        }
+        self.builder.build_unconditional_branch(condition_bb).unwrap();
+        
+        // Generate condition
+        self.builder.position_at_end(condition_bb);
+        let condition_bool = if let Some(cond_expr) = condition {
+            let condition_val = self.generate_expression(cond_expr)?;
+            match condition_val {
+                BasicValueEnum::IntValue(val) => {
+                    if val.get_type().get_bit_width() == 1 {
+                        val
+                    } else {
+                        let zero = self.i64_type.const_int(0, false);
+                        self.builder.build_int_compare(
+                            inkwell::IntPredicate::NE,
+                            val,
+                            zero,
+                            "for_condition"
+                        ).unwrap()
+                    }
+                }
+                _ => return Err(CompilerError::CodeGen("For condition must be integer".to_string())),
+            }
+        } else {
+            // No condition means infinite loop
+            self.context.bool_type().const_int(1, false)
+        };
+        
+        self.builder.build_conditional_branch(condition_bool, body_bb, after_bb).unwrap();
+        
+        // Generate body
+        self.builder.position_at_end(body_bb);
+        for stmt in body {
+            self.generate_statement(stmt)?;
+        }
+        self.builder.build_unconditional_branch(increment_bb).unwrap();
+        
+        // Generate increment
+        self.builder.position_at_end(increment_bb);
+        if let Some(inc_expr) = increment {
+            self.generate_expression(inc_expr)?;
+        }
+        self.builder.build_unconditional_branch(condition_bb).unwrap();
+        
+        self.builder.position_at_end(after_bb);
+        Ok(())
+    }
+
+    /// Generates code for for-each statement
+    fn generate_for_each_statement(&mut self, _variable: &str, _iterable: &Expr, _body: &[Statement]) -> Result<(), CompilerError> {
+        // TODO: Implement for-each loops
+        // For now, just skip
+        Ok(())
+    }
+
+    /// Generates code for break statement
+    fn generate_break_statement(&mut self) -> Result<(), CompilerError> {
+        // TODO: Implement break with proper loop context
+        // For now, this is a placeholder
+        Ok(())
+    }
+
+    /// Generates code for continue statement
+    fn generate_continue_statement(&mut self) -> Result<(), CompilerError> {
+        // TODO: Implement continue with proper loop context
+        // For now, this is a placeholder
+        Ok(())
     }
 }
 

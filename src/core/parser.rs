@@ -50,6 +50,12 @@ impl Parser {
             Token::Import => self.parse_import_statement(),
             Token::Se => self.parse_if_statement(),
             Token::Escolha => self.parse_switch_statement(),
+            Token::Enquanto => self.parse_while_statement(),
+            Token::Fazer => self.parse_do_while_statement(),
+            Token::Para => self.parse_for_statement(),
+            Token::ParaCada => self.parse_for_each_statement(),
+            Token::Sustar => self.parse_break_statement(),
+            Token::Continua => self.parse_continue_statement(),
             Token::Ident(_) => self.parse_assignment_or_call(),
             _ => Err(CompilerError::Parser(format!(
                 "Unexpected token: {:?}", self.current_token()
@@ -274,6 +280,14 @@ impl Parser {
                 self.advance();
                 Ok(Expr::String(s))
             }
+            Token::Verdadeiro => {
+                self.advance();
+                Ok(Expr::Bool(true))
+            }
+            Token::Falso => {
+                self.advance();
+                Ok(Expr::Bool(false))
+            }
             Token::Ident(name) => {
                 let name = name.clone();
                 self.advance();
@@ -489,6 +503,95 @@ impl Parser {
         })
     }
 
+    /// Parses a while statement: enquanto condition { statements }
+    fn parse_while_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Enquanto, "Expected 'enquanto' keyword")?;
+        let condition = self.parse_expression()?;
+        self.consume(Token::LeftBrace, "Expected '{' after condition")?;
+        let body = self.parse_block()?;
+
+        Ok(Statement::While { condition, body })
+    }
+
+    /// Parses a do-while statement: fazer { statements } enquanto condition
+    fn parse_do_while_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Fazer, "Expected 'fazer' keyword")?;
+        self.consume(Token::LeftBrace, "Expected '{' after 'fazer'")?;
+        let body = self.parse_block()?;
+        self.consume(Token::Enquanto, "Expected 'enquanto' after do block")?;
+        let condition = self.parse_expression()?;
+
+        Ok(Statement::DoWhile { body, condition })
+    }
+
+    /// Parses a for statement: para [initializer]; [condition]; [increment] { statements }
+    fn parse_for_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Para, "Expected 'para' keyword")?;
+
+        let initializer = if self.match_token(Token::Var) {
+            let name = self.consume_identifier("Expected variable name")?;
+            self.consume(Token::Assign, "Expected '=' after variable name")?;
+            let value = self.parse_expression()?;
+            Some(Box::new(Statement::VarDeclaration { name, value }))
+        } else if self.match_token(Token::Semicolon) {
+            None
+        } else {
+            return Err(CompilerError::Parser("Expected variable declaration or ';' in for loop".to_string()));
+        };
+        self.consume(Token::Semicolon, "Expected ';' after initializer")?;
+
+        let condition = if !self.check(Token::Semicolon) && !self.check(Token::LeftBrace) {
+            Some(self.parse_expression()?)
+        } else {
+            None
+        };
+        
+        // Optional semicolon after condition
+        if self.check(Token::Semicolon) {
+            self.advance();
+        }
+
+        let increment = if !self.check(Token::LeftBrace) {
+            Some(self.parse_expression()?)
+        } else {
+            None
+        };
+        
+        // Optional semicolon after increment
+        if self.check(Token::Semicolon) {
+            self.advance();
+        }
+
+        self.consume(Token::LeftBrace, "Expected '{' after for header")?;
+        let body = self.parse_block()?;
+
+        Ok(Statement::For { initializer, condition, increment, body })
+    }
+
+    /// Parses a for-each statement: para cada variable in iterable { statements }
+    fn parse_for_each_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::ParaCada, "Expected 'para cada' keyword")?;
+        let variable = self.consume_identifier("Expected variable name")?;
+        self.consume(Token::Ident("de".to_string()), "Expected 'de' after variable")?;
+        let iterable = self.parse_expression()?;
+        self.consume(Token::LeftBrace, "Expected '{' after iterable")?;
+        let body = self.parse_block()?;
+
+        Ok(Statement::ForEach { variable, iterable, body })
+    }
+
+    /// Parses a break statement: sustar
+    fn parse_break_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Sustar, "Expected 'sustar' keyword")?;
+        Ok(Statement::Break)
+    }
+
+    /// Parses a continue statement: continua
+    fn parse_continue_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Continua, "Expected 'continua' keyword")?;
+        Ok(Statement::Continue)
+    }
+
     /// Parses a block of statements enclosed in braces
     fn parse_block(&mut self) -> Result<Vec<Statement>, CompilerError> {
         let mut statements = Vec::new();
@@ -655,6 +758,53 @@ mod tests {
         })
     }
 
+    /// Parses a while statement: enquanto condition { statements }
+    fn parse_while_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Enquanto, "Expected 'enquanto' keyword")?;
+        let condition = self.parse_expression()?;
+        self.consume(Token::LeftBrace, "Expected '{' after condition")?;
+        let body = self.parse_block()?;
+
+        Ok(Statement::While { condition, body })
+    }
+
+    /// Parses a do-while statement: fazer { statements } enquanto condition
+    fn parse_do_while_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Fazer, "Expected 'fazer' keyword")?;
+        self.consume(Token::LeftBrace, "Expected '{' after 'fazer'")?;
+        let body = self.parse_block()?;
+        self.consume(Token::Enquanto, "Expected 'enquanto' after do block")?;
+        let condition = self.parse_expression()?;
+
+        Ok(Statement::DoWhile { body, condition })
+    }
+
+    /// Parses a for statement: para [initializer]; [condition]; [increment] { statements }
+
+    /// Parses a for-each statement: para cada variable in iterable { statements }
+    fn parse_for_each_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::ParaCada, "Expected 'para cada' keyword")?;
+        let variable = self.consume_identifier("Expected variable name")?;
+        self.consume(Token::Ident("de".to_string()), "Expected 'de' after variable")?;
+        let iterable = self.parse_expression()?;
+        self.consume(Token::LeftBrace, "Expected '{' after iterable")?;
+        let body = self.parse_block()?;
+
+        Ok(Statement::ForEach { variable, iterable, body })
+    }
+
+    /// Parses a break statement: sustar
+    fn parse_break_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Sustar, "Expected 'sustar' keyword")?;
+        Ok(Statement::Break)
+    }
+
+    /// Parses a continue statement: continua
+    fn parse_continue_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Continua, "Expected 'continua' keyword")?;
+        Ok(Statement::Continue)
+    }
+
     /// Parses a block of statements enclosed in braces
     fn parse_block(&mut self) -> Result<Vec<Statement>, CompilerError> {
         let mut statements = Vec::new();
@@ -665,5 +815,288 @@ mod tests {
 
         self.consume(Token::RightBrace, "Expected '}' after block")?;
         Ok(statements)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::lexer::Lexer;
+
+    #[test]
+    fn test_parse_variable_declaration() {
+        let lexer = Lexer::new();
+        let tokens = lexer.tokenize("var x = 42;");
+        let mut parser = Parser::new(tokens);
+
+        let program = parser.parse().unwrap();
+        assert_eq!(program.statements.len(), 1);
+
+        match &program.statements[0] {
+            Statement::VarDeclaration { name, value } => {
+                assert_eq!(name, "x");
+                assert_eq!(*value, Expr::Number(42));
+            }
+            _ => panic!("Expected variable declaration"),
+        }
+    }
+
+    #[test]
+    fn test_parse_arithmetic_expression() {
+        let lexer = Lexer::new();
+        let tokens = lexer.tokenize("2 + 3 * 4");
+        let mut parser = Parser::new(tokens);
+
+        let expr = parser.parse_expression_only().unwrap();
+        assert_eq!(expr, Expr::Binary {
+            left: Box::new(Expr::Number(2)),
+            operator: BinaryOp::Add,
+            right: Box::new(Expr::Binary {
+                left: Box::new(Expr::Number(3)),
+                operator: BinaryOp::Multiply,
+                right: Box::new(Expr::Number(4)),
+            }),
+        });
+    }
+
+    #[test]
+    fn test_parse_function_call() {
+        let lexer = Lexer::new();
+        let tokens = lexer.tokenize("escreva(\"Hello\")");
+        let mut parser = Parser::new(tokens);
+
+        let expr = parser.parse_expression_only().unwrap();
+        assert_eq!(expr, Expr::FunctionCall {
+            name: "escreva".to_string(),
+            args: vec![Expr::String("Hello".to_string())],
+        });
+    }
+
+    #[test]
+    fn test_parse_complex_program() {
+        let lexer = Lexer::new();
+        let code = r#"
+            var a = 10;
+            var b = 5;
+            escreva("Sum: " + texto(a + b));
+        "#;
+        let tokens = lexer.tokenize(code);
+        let mut parser = Parser::new(tokens);
+
+        let program = parser.parse().unwrap();
+        assert_eq!(program.statements.len(), 3);
+    }
+
+    /// Parses an if statement: se condition { statements } [senao se condition { statements }]* [senao { statements }]
+    fn parse_if_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Se, "Expected 'se' keyword")?;
+        let condition = self.parse_expression()?;
+        self.consume(Token::LeftBrace, "Expected '{' after condition")?;
+        let then_branch = self.parse_block()?;
+
+        let mut else_if_branches = Vec::new();
+        let mut else_branch = None;
+
+        // Check for else-if branches
+        while self.match_token(Token::SenaoSe) {
+            let else_if_condition = self.parse_expression()?;
+            self.consume(Token::LeftBrace, "Expected '{' after else-if condition")?;
+            let else_if_statements = self.parse_block()?;
+            else_if_branches.push((else_if_condition, else_if_statements));
+        }
+
+        // Check for else branch
+        if self.match_token(Token::Senao) {
+            self.consume(Token::LeftBrace, "Expected '{' after 'senao'")?;
+            else_branch = Some(self.parse_block()?);
+        }
+
+        if else_if_branches.is_empty() {
+            Ok(Statement::If {
+                condition,
+                then_branch,
+                else_branch,
+            })
+        } else {
+            Ok(Statement::IfElseIf {
+                condition,
+                then_branch,
+                else_if_branches,
+                else_branch,
+            })
+        }
+    }
+
+    /// Parses a switch statement: escolha value { caso value: statements* [padrao: statements] }
+    fn parse_switch_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Escolha, "Expected 'escolha' keyword")?;
+        let value = self.parse_expression()?;
+        self.consume(Token::LeftBrace, "Expected '{' after switch value")?;
+
+        let mut cases = Vec::new();
+        let mut default = None;
+
+        while !self.check(Token::RightBrace) && !self.is_at_end() {
+            if self.match_token(Token::Caso) {
+                let case_value = self.parse_expression()?;
+                self.consume(Token::Colon, "Expected ':' after case value")?;
+                let mut case_statements = Vec::new();
+
+                // Parse multiple statements until next case, default, or end of switch
+                while !self.check(Token::Caso) && !self.check(Token::Padrao) && !self.check(Token::RightBrace) && !self.is_at_end() {
+                    case_statements.push(self.parse_statement()?);
+                }
+
+                cases.push((case_value, case_statements));
+            } else if self.match_token(Token::Padrao) {
+                self.consume(Token::Colon, "Expected ':' after 'padrao'")?;
+                let mut default_statements = Vec::new();
+
+                while !self.check(Token::RightBrace) && !self.is_at_end() {
+                    default_statements.push(self.parse_statement()?);
+                }
+
+                default = Some(default_statements);
+            } else {
+                return Err(CompilerError::Parser("Expected 'caso' or 'padrao' in switch statement".to_string()));
+            }
+        }
+
+        self.consume(Token::RightBrace, "Expected '}' after switch body")?;
+
+        Ok(Statement::Switch {
+            value,
+            cases,
+            default,
+        })
+    }
+
+    /// Parses a while statement: enquanto condition { statements }
+    fn parse_while_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Enquanto, "Expected 'enquanto' keyword")?;
+        let condition = self.parse_expression()?;
+        self.consume(Token::LeftBrace, "Expected '{' after condition")?;
+        let body = self.parse_block()?;
+
+        Ok(Statement::While { condition, body })
+    }
+
+    /// Parses a do-while statement: fazer { statements } enquanto condition
+    fn parse_do_while_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Fazer, "Expected 'fazer' keyword")?;
+        self.consume(Token::LeftBrace, "Expected '{' after 'fazer'")?;
+        let body = self.parse_block()?;
+        self.consume(Token::Enquanto, "Expected 'enquanto' after do block")?;
+        let condition = self.parse_expression()?;
+
+        Ok(Statement::DoWhile { body, condition })
+    }
+
+    /// Parses a for statement: para [initializer]; [condition]; [increment] { statements }
+
+    /// Parses a for-each statement: para cada variable in iterable { statements }
+    fn parse_for_each_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::ParaCada, "Expected 'para cada' keyword")?;
+        let variable = self.consume_identifier("Expected variable name")?;
+        self.consume(Token::Ident("de".to_string()), "Expected 'de' after variable")?;
+        let iterable = self.parse_expression()?;
+        self.consume(Token::LeftBrace, "Expected '{' after iterable")?;
+        let body = self.parse_block()?;
+
+        Ok(Statement::ForEach { variable, iterable, body })
+    }
+
+    /// Parses a break statement: sustar
+    fn parse_break_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Sustar, "Expected 'sustar' keyword")?;
+        Ok(Statement::Break)
+    }
+
+    /// Parses a continue statement: continua
+    fn parse_continue_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Continua, "Expected 'continua' keyword")?;
+        Ok(Statement::Continue)
+    }
+
+    /// Parses a block of statements enclosed in braces
+    fn parse_block(&mut self) -> Result<Vec<Statement>, CompilerError> {
+        let mut statements = Vec::new();
+
+        while !self.check(Token::RightBrace) && !self.is_at_end() {
+            statements.push(self.parse_statement()?);
+        }
+
+        self.consume(Token::RightBrace, "Expected '}' after block")?;
+        Ok(statements)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::lexer::Lexer;
+
+    #[test]
+    fn test_parse_variable_declaration() {
+        let lexer = Lexer::new();
+        let tokens = lexer.tokenize("var x = 42;");
+        let mut parser = Parser::new(tokens);
+
+        let program = parser.parse().unwrap();
+        assert_eq!(program.statements.len(), 1);
+
+        match &program.statements[0] {
+            Statement::VarDeclaration { name, value } => {
+                assert_eq!(name, "x");
+                assert_eq!(*value, Expr::Number(42));
+            }
+            _ => panic!("Expected variable declaration"),
+        }
+    }
+
+    #[test]
+    fn test_parse_arithmetic_expression() {
+        let lexer = Lexer::new();
+        let tokens = lexer.tokenize("2 + 3 * 4");
+        let mut parser = Parser::new(tokens);
+
+        let expr = parser.parse_expression_only().unwrap();
+        assert_eq!(expr, Expr::Binary {
+            left: Box::new(Expr::Number(2)),
+            operator: BinaryOp::Add,
+            right: Box::new(Expr::Binary {
+                left: Box::new(Expr::Number(3)),
+                operator: BinaryOp::Multiply,
+                right: Box::new(Expr::Number(4)),
+            }),
+        });
+    }
+
+    #[test]
+    fn test_parse_function_call() {
+        let lexer = Lexer::new();
+        let tokens = lexer.tokenize("escreva(\"Hello\")");
+        let mut parser = Parser::new(tokens);
+
+        let expr = parser.parse_expression_only().unwrap();
+        assert_eq!(expr, Expr::FunctionCall {
+            name: "escreva".to_string(),
+            args: vec![Expr::String("Hello".to_string())],
+        });
+    }
+
+    #[test]
+    fn test_parse_complex_program() {
+        let lexer = Lexer::new();
+        let code = r#"
+            var a = 10;
+            var b = 5;
+            escreva("Sum: " + texto(a + b));
+        "#;
+        let tokens = lexer.tokenize(code);
+        let mut parser = Parser::new(tokens);
+
+        let program = parser.parse().unwrap();
+        assert_eq!(program.statements.len(), 3);
     }
 }

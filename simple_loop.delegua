@@ -1,0 +1,20 @@
+var contador = 0;
+enquanto contador < 5 {
+  escreva(contador);
+  contador = contador + 1;
+}
+
+para var i = 0; i < 5 {
+  escreva("For: " + texto(i));
+  i = i + 1;
+}
+
+fazer {
+  escreva("Do-while");
+} enquanto falso
+
+var teste_verdadeiro = verdadeiro;
+escreva("Verdadeiro: " + texto(teste_verdadeiro));
+
+var teste_falso = falso;
+escreva("Falso: " + texto(teste_falso));
