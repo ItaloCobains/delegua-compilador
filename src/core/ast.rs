@@ -40,6 +40,7 @@ pub enum Expr {
 #[derive(Debug, PartialEq, Clone)]
 pub enum BinaryOp {
     Add, Subtract, Multiply, Divide,
+    Equal, NotEqual, Less, Greater, LessEqual, GreaterEqual,
 }
 
 /// Represents a statement in the DC language
@@ -61,6 +62,28 @@ pub enum Statement {
     Import {
         module: String,
         items: Option<Vec<String>>,
+    },
+
+    /// If statement
+    If {
+        condition: Expr,
+        then_branch: Vec<Statement>,
+        else_branch: Option<Vec<Statement>>,
+    },
+
+    /// If-ElseIf-Else chain
+    IfElseIf {
+        condition: Expr,
+        then_branch: Vec<Statement>,
+        else_if_branches: Vec<(Expr, Vec<Statement>)>,
+        else_branch: Option<Vec<Statement>>,
+    },
+
+    /// Switch statement
+    Switch {
+        value: Expr,
+        cases: Vec<(Expr, Vec<Statement>)>,
+        default: Option<Vec<Statement>>,
     },
 
     /// Function call as a statement

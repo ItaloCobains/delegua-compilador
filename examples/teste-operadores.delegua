@@ -1,0 +1,28 @@
+var a = 5;
+var b = 10;
+
+escreva("Testando operadores de comparação:");
+
+se (a < b) {
+    escreva("a < b é verdadeiro");
+}
+
+se (a <= 5) {
+    escreva("a <= 5 é verdadeiro");
+}
+
+se (b > a) {
+    escreva("b > a é verdadeiro");
+}
+
+se (b >= 10) {
+    escreva("b >= 10 é verdadeiro");
+}
+
+se (a == 5) {
+    escreva("a == 5 é verdadeiro");
+}
+
+se (b != 5) {
+    escreva("b != 5 é verdadeiro");
+}

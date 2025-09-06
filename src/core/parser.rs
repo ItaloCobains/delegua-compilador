@@ -48,6 +48,8 @@ impl Parser {
             Token::Var => self.parse_variable_declaration(),
             Token::Escreva => self.parse_function_call_statement(),
             Token::Import => self.parse_import_statement(),
+            Token::Se => self.parse_if_statement(),
+            Token::Escolha => self.parse_switch_statement(),
             Token::Ident(_) => self.parse_assignment_or_call(),
             _ => Err(CompilerError::Parser(format!(
                 "Unexpected token: {:?}", self.current_token()
@@ -167,7 +169,33 @@ impl Parser {
 
     /// Parses an expression with operator precedence
     fn parse_expression(&mut self) -> Result<Expr, CompilerError> {
-        self.parse_additive()
+        self.parse_comparison()
+    }
+
+    /// Parses comparison expressions (<, >, <=, >=, ==, !=)
+    fn parse_comparison(&mut self) -> Result<Expr, CompilerError> {
+        let mut left = self.parse_additive()?;
+
+        while self.match_tokens(&[Token::Less, Token::Greater, Token::LessEqual, Token::GreaterEqual, Token::Equal, Token::NotEqual]) {
+            let operator = match self.previous_token() {
+                Token::Less => BinaryOp::Less,
+                Token::Greater => BinaryOp::Greater,
+                Token::LessEqual => BinaryOp::LessEqual,
+                Token::GreaterEqual => BinaryOp::GreaterEqual,
+                Token::Equal => BinaryOp::Equal,
+                Token::NotEqual => BinaryOp::NotEqual,
+                _ => unreachable!(),
+            };
+
+            let right = self.parse_additive()?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                operator,
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
     }
 
     /// Parses additive expressions (+, -)
@@ -376,6 +404,102 @@ impl Parser {
     fn is_at_end(&self) -> bool {
         matches!(self.current_token(), Token::EOF)
     }
+
+    /// Parses an if statement: se condition { statements } [senao se condition { statements }]* [senao { statements }]
+    fn parse_if_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Se, "Expected 'se' keyword")?;
+        let condition = self.parse_expression()?;
+        self.consume(Token::LeftBrace, "Expected '{' after condition")?;
+        let then_branch = self.parse_block()?;
+
+        let mut else_if_branches = Vec::new();
+        let mut else_branch = None;
+
+        // Check for else-if branches
+        while self.match_token(Token::SenaoSe) {
+            let else_if_condition = self.parse_expression()?;
+            self.consume(Token::LeftBrace, "Expected '{' after else-if condition")?;
+            let else_if_statements = self.parse_block()?;
+            else_if_branches.push((else_if_condition, else_if_statements));
+        }
+
+        // Check for else branch
+        if self.match_token(Token::Senao) {
+            self.consume(Token::LeftBrace, "Expected '{' after 'senao'")?;
+            else_branch = Some(self.parse_block()?);
+        }
+
+        if else_if_branches.is_empty() {
+            Ok(Statement::If {
+                condition,
+                then_branch,
+                else_branch,
+            })
+        } else {
+            Ok(Statement::IfElseIf {
+                condition,
+                then_branch,
+                else_if_branches,
+                else_branch,
+            })
+        }
+    }
+
+    /// Parses a switch statement: escolha value { caso value: statements* [padrao: statements] }
+    fn parse_switch_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Escolha, "Expected 'escolha' keyword")?;
+        let value = self.parse_expression()?;
+        self.consume(Token::LeftBrace, "Expected '{' after switch value")?;
+
+        let mut cases = Vec::new();
+        let mut default = None;
+
+        while !self.check(Token::RightBrace) && !self.is_at_end() {
+            if self.match_token(Token::Caso) {
+                let case_value = self.parse_expression()?;
+                self.consume(Token::Colon, "Expected ':' after case value")?;
+                let mut case_statements = Vec::new();
+
+                // Parse multiple statements until next case, default, or end of switch
+                while !self.check(Token::Caso) && !self.check(Token::Padrao) && !self.check(Token::RightBrace) && !self.is_at_end() {
+                    case_statements.push(self.parse_statement()?);
+                }
+
+                cases.push((case_value, case_statements));
+            } else if self.match_token(Token::Padrao) {
+                self.consume(Token::Colon, "Expected ':' after 'padrao'")?;
+                let mut default_statements = Vec::new();
+
+                while !self.check(Token::RightBrace) && !self.is_at_end() {
+                    default_statements.push(self.parse_statement()?);
+                }
+
+                default = Some(default_statements);
+            } else {
+                return Err(CompilerError::Parser("Expected 'caso' or 'padrao' in switch statement".to_string()));
+            }
+        }
+
+        self.consume(Token::RightBrace, "Expected '}' after switch body")?;
+
+        Ok(Statement::Switch {
+            value,
+            cases,
+            default,
+        })
+    }
+
+    /// Parses a block of statements enclosed in braces
+    fn parse_block(&mut self) -> Result<Vec<Statement>, CompilerError> {
+        let mut statements = Vec::new();
+
+        while !self.check(Token::RightBrace) && !self.is_at_end() {
+            statements.push(self.parse_statement()?);
+        }
+
+        self.consume(Token::RightBrace, "Expected '}' after block")?;
+        Ok(statements)
+    }
 }
 
 #[cfg(test)]
@@ -445,5 +569,101 @@ mod tests {
 
         let program = parser.parse().unwrap();
         assert_eq!(program.statements.len(), 3);
+    }
+
+    /// Parses an if statement: se condition { statements } [senao se condition { statements }]* [senao { statements }]
+    fn parse_if_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Se, "Expected 'se' keyword")?;
+        let condition = self.parse_expression()?;
+        self.consume(Token::LeftBrace, "Expected '{' after condition")?;
+        let then_branch = self.parse_block()?;
+
+        let mut else_if_branches = Vec::new();
+        let mut else_branch = None;
+
+        // Check for else-if branches
+        while self.match_token(Token::SenaoSe) {
+            let else_if_condition = self.parse_expression()?;
+            self.consume(Token::LeftBrace, "Expected '{' after else-if condition")?;
+            let else_if_statements = self.parse_block()?;
+            else_if_branches.push((else_if_condition, else_if_statements));
+        }
+
+        // Check for else branch
+        if self.match_token(Token::Senao) {
+            self.consume(Token::LeftBrace, "Expected '{' after 'senao'")?;
+            else_branch = Some(self.parse_block()?);
+        }
+
+        if else_if_branches.is_empty() {
+            Ok(Statement::If {
+                condition,
+                then_branch,
+                else_branch,
+            })
+        } else {
+            Ok(Statement::IfElseIf {
+                condition,
+                then_branch,
+                else_if_branches,
+                else_branch,
+            })
+        }
+    }
+
+    /// Parses a switch statement: escolha value { caso value: statements* [padrao: statements] }
+    fn parse_switch_statement(&mut self) -> Result<Statement, CompilerError> {
+        self.consume(Token::Escolha, "Expected 'escolha' keyword")?;
+        let value = self.parse_expression()?;
+        self.consume(Token::LeftBrace, "Expected '{' after switch value")?;
+
+        let mut cases = Vec::new();
+        let mut default = None;
+
+        while !self.check(Token::RightBrace) && !self.is_at_end() {
+            if self.match_token(Token::Caso) {
+                let case_value = self.parse_expression()?;
+                self.consume(Token::Colon, "Expected ':' after case value")?;
+                let mut case_statements = Vec::new();
+
+                // Parse multiple statements until next case, default, or end of switch
+                while !self.check(Token::Caso) && !self.check(Token::Padrao) && !self.check(Token::RightBrace) && !self.is_at_end() {
+                    case_statements.push(self.parse_statement()?);
+                }
+
+                cases.push((case_value, case_statements));
+            } else if self.match_token(Token::Padrao) {
+                self.consume(Token::Colon, "Expected ':' after 'padrao'")?;
+                let mut default_statements = Vec::new();
+
+                while !self.check(Token::RightBrace) && !self.is_at_end() {
+                    default_statements.push(self.parse_statement()?);
+                }
+
+                default = Some(default_statements);
+            } else {
+                return Err(CompilerError::Parser("Expected 'caso' or 'padrao' in switch statement".to_string()));
+            }
+        }
+
+        self.consume(Token::RightBrace, "Expected '}' after switch body")?;
+
+        Ok(Statement::Switch {
+            value,
+            cases,
+            default,
+        })
+    }
+
+    /// Parses a block of statements enclosed in braces
+    fn parse_block(&mut self) -> Result<Vec<Statement>, CompilerError> {
+        let mut statements = Vec::new();
+
+        while !self.check(Token::RightBrace) && !self.is_at_end() {
+            statements.push(self.parse_statement()?);
+        }
+
+        self.consume(Token::RightBrace, "Expected '}' after block")?;
+        Ok(statements)
     }
 }

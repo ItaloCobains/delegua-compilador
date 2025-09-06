@@ -132,6 +132,15 @@ impl<'ctx> CodeGen<'ctx> {
             Statement::Import { module, items } => {
                 self.generate_import(module, items.as_ref())
             }
+            Statement::If { condition, then_branch, else_branch } => {
+                self.generate_if_statement(condition, then_branch, else_branch.as_ref())
+            }
+            Statement::IfElseIf { condition, then_branch, else_if_branches, else_branch } => {
+                self.generate_if_else_if_statement(condition, then_branch, else_if_branches, else_branch.as_ref())
+            }
+            Statement::Switch { value, cases, default } => {
+                self.generate_switch_statement(value, cases, default.as_ref())
+            }
             Statement::FunctionCall(expr) => {
                 self.generate_expression(expr)?;
                 Ok(())
@@ -242,6 +251,12 @@ impl<'ctx> CodeGen<'ctx> {
                             BinaryOp::Subtract => self.builder.build_int_sub(l, r, "sub"),
                             BinaryOp::Multiply => self.builder.build_int_mul(l, r, "mul"),
                             BinaryOp::Divide => self.builder.build_int_signed_div(l, r, "div"),
+                            BinaryOp::Equal => self.builder.build_int_compare(inkwell::IntPredicate::EQ, l, r, "eq"),
+                            BinaryOp::NotEqual => self.builder.build_int_compare(inkwell::IntPredicate::NE, l, r, "ne"),
+                            BinaryOp::Less => self.builder.build_int_compare(inkwell::IntPredicate::SLT, l, r, "lt"),
+                            BinaryOp::Greater => self.builder.build_int_compare(inkwell::IntPredicate::SGT, l, r, "gt"),
+                            BinaryOp::LessEqual => self.builder.build_int_compare(inkwell::IntPredicate::SLE, l, r, "le"),
+                            BinaryOp::GreaterEqual => self.builder.build_int_compare(inkwell::IntPredicate::SGE, l, r, "ge"),
                         }.map_err(|e| CompilerError::CodeGen(format!("Error building binary operation: {:?}", e)))?;
                         Ok(result.into())
                     }
@@ -511,6 +526,185 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         Ok(self.get_ir())
+    }
+
+    /// Generates code for if statement
+    fn generate_if_statement(&mut self, condition: &Expr, then_branch: &[Statement], else_branch: Option<&Vec<Statement>>) -> Result<(), CompilerError> {
+        let condition_val = self.generate_expression(condition)?;
+        let condition_bool = match condition_val {
+            BasicValueEnum::IntValue(val) => {
+                // If it's an i64, convert to boolean
+                if val.get_type().get_bit_width() == 1 {
+                    // Already a boolean (i1)
+                    val
+                } else {
+                    // Convert i64 to boolean
+                    let zero = self.i64_type.const_int(0, false);
+                    self.builder.build_int_compare(
+                        inkwell::IntPredicate::NE,
+                        val,
+                        zero,
+                        "condition_bool"
+                    ).unwrap()
+                }
+            }
+            _ => return Err(CompilerError::CodeGen("If condition must be integer".to_string())),
+        };
+
+        // Get current function from builder
+        let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        
+        let then_bb = self.context.append_basic_block(current_function, "then");
+        let merge_bb = self.context.append_basic_block(current_function, "merge");
+
+        let else_bb = if else_branch.is_some() {
+            Some(self.context.append_basic_block(current_function, "else"))
+        } else {
+            None
+        };
+
+        self.builder.build_conditional_branch(condition_bool, then_bb, else_bb.unwrap_or(merge_bb)).unwrap();
+
+        // Generate then branch
+        self.builder.position_at_end(then_bb);
+        for stmt in then_branch {
+            self.generate_statement(stmt)?;
+        }
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
+
+        // Generate else branch if present
+        if let Some(else_stmts) = else_branch {
+            if let Some(else_block) = else_bb {
+                self.builder.position_at_end(else_block);
+                for stmt in else_stmts {
+                    self.generate_statement(stmt)?;
+                }
+                self.builder.build_unconditional_branch(merge_bb).unwrap();
+            }
+        }
+
+        self.builder.position_at_end(merge_bb);
+        Ok(())
+    }
+
+    /// Generates code for if-else-if statement
+    fn generate_if_else_if_statement(&mut self, condition: &Expr, then_branch: &[Statement], else_if_branches: &[(Expr, Vec<Statement>)], else_branch: Option<&Vec<Statement>>) -> Result<(), CompilerError> {
+        let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+
+        // Generate the main if condition
+        let condition_val = self.generate_expression(condition)?;
+        let condition_bool = match condition_val {
+            BasicValueEnum::IntValue(val) => {
+                if val.get_type().get_bit_width() == 1 {
+                    val
+                } else {
+                    let zero = self.i64_type.const_int(0, false);
+                    self.builder.build_int_compare(
+                        inkwell::IntPredicate::NE,
+                        val,
+                        zero,
+                        "condition_bool"
+                    ).unwrap()
+                }
+            }
+            _ => return Err(CompilerError::CodeGen("If condition must be integer".to_string())),
+        };
+
+        let then_bb = self.context.append_basic_block(current_function, "then");
+        let current_else_bb = self.context.append_basic_block(current_function, "else_if_start");
+        let merge_bb = self.context.append_basic_block(current_function, "merge");
+
+        self.builder.build_conditional_branch(condition_bool, then_bb, current_else_bb).unwrap();
+
+        // Generate then branch
+        self.builder.position_at_end(then_bb);
+        for stmt in then_branch {
+            self.generate_statement(stmt)?;
+        }
+        self.builder.build_unconditional_branch(merge_bb).unwrap();
+
+        // Generate else-if chain
+        let mut previous_else_bb = current_else_bb;
+        for (i, (else_if_condition, else_if_statements)) in else_if_branches.iter().enumerate() {
+            self.builder.position_at_end(previous_else_bb);
+
+            let else_if_condition_val = self.generate_expression(else_if_condition)?;
+            let else_if_condition_bool = match else_if_condition_val {
+                BasicValueEnum::IntValue(val) => {
+                    if val.get_type().get_bit_width() == 1 {
+                        val
+                    } else {
+                        let zero = self.i64_type.const_int(0, false);
+                        self.builder.build_int_compare(
+                            inkwell::IntPredicate::NE,
+                            val,
+                            zero,
+                            &format!("else_if_condition_bool_{}", i)
+                        ).unwrap()
+                    }
+                }
+                _ => return Err(CompilerError::CodeGen("Else-if condition must be integer".to_string())),
+            };
+
+            let else_if_then_bb = self.context.append_basic_block(current_function, &format!("else_if_then_{}", i));
+            let next_else_bb = if i < else_if_branches.len() - 1 {
+                self.context.append_basic_block(current_function, &format!("else_if_{}", i + 1))
+            } else if else_branch.is_some() {
+                self.context.append_basic_block(current_function, "final_else")
+            } else {
+                merge_bb
+            };
+
+            self.builder.build_conditional_branch(else_if_condition_bool, else_if_then_bb, next_else_bb).unwrap();
+
+            // Generate else-if then branch
+            self.builder.position_at_end(else_if_then_bb);
+            for stmt in else_if_statements {
+                self.generate_statement(stmt)?;
+            }
+            self.builder.build_unconditional_branch(merge_bb).unwrap();
+
+            previous_else_bb = next_else_bb;
+        }
+
+        // Generate final else branch if present
+        if let Some(else_stmts) = else_branch {
+            self.builder.position_at_end(previous_else_bb);
+            for stmt in else_stmts {
+                self.generate_statement(stmt)?;
+            }
+            self.builder.build_unconditional_branch(merge_bb).unwrap();
+        } else if !else_if_branches.is_empty() {
+            // If no final else but we have else-ifs, the last else-if's false branch should go to merge
+            self.builder.position_at_end(previous_else_bb);
+            self.builder.build_unconditional_branch(merge_bb).unwrap();
+        }
+
+        self.builder.position_at_end(merge_bb);
+        Ok(())
+    }
+
+    /// Generates code for switch statement
+    fn generate_switch_statement(&mut self, _value: &Expr, cases: &[(Expr, Vec<Statement>)], default: Option<&Vec<Statement>>) -> Result<(), CompilerError> {
+        // For now, implement as if-else chain
+        // TODO: Implement proper switch with jump table
+        if let Some((first_case_val, first_case_stmts)) = cases.first() {
+            let mut else_stmts = Vec::new();
+            
+            // Add remaining cases as else-if
+            for (_case_val, _case_stmts) in &cases[1..] {
+                // TODO: Generate comparison and statements
+            }
+            
+            // Add default as else
+            if let Some(default_stmts) = default {
+                else_stmts.extend_from_slice(default_stmts);
+            }
+            
+            self.generate_if_statement(first_case_val, first_case_stmts, if else_stmts.is_empty() { None } else { Some(&else_stmts) })
+        } else {
+            Ok(())
+        }
     }
 }
 

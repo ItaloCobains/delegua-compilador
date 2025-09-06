@@ -27,6 +27,13 @@ pub enum Token {
     /// Import keyword
     Import,
 
+    /// Conditional keywords
+    Se, Senao, SenaoSe,
+    Escolha, Caso, Padrao,
+
+    /// Comparison operators
+    Equal, NotEqual, Less, Greater, LessEqual, GreaterEqual,
+
     /// Arithmetic operators
     Plus, Minus, Multiply, Divide,
 
@@ -42,6 +49,9 @@ pub enum Token {
 
     /// Comma separator
     Comma,
+
+    /// Colon separator
+    Colon,
 
     /// End of file marker
     EOF,

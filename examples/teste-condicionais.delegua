@@ -1,0 +1,37 @@
+importar "matematica";
+
+var numero = 10;
+
+// Teste de if simples
+se numero > 5 {
+  escreva("Número é maior que 5");
+}
+
+// Teste de if-else
+se numero < 5 {
+  escreva("Número é menor que 5");
+} senao {
+  escreva("Número não é menor que 5");
+}
+
+// Teste de if-else-if
+se numero == 1 {
+  escreva("Número é 1");
+} senao se numero == 10 {
+  escreva("Número é 10");
+} senao {
+  escreva("Número não é 1 nem 10");
+}
+
+// Teste de operadores de comparação
+se numero >= 10 {
+  escreva("Número é maior ou igual a 10");
+}
+
+se numero <= 15 {
+  escreva("Número é menor ou igual a 15");
+}
+
+se numero != 5 {
+  escreva("Número é diferente de 5");
+}

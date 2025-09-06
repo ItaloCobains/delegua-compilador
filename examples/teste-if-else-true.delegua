@@ -1,0 +1,7 @@
+var x = 15;
+
+se (x > 10) {
+    escreva("x é maior que 10");
+} senao {
+    escreva("x é menor ou igual a 10");
+}

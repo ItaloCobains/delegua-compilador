@@ -41,13 +41,50 @@ impl Lexer {
                 '+' => { chars.next(); tokens.push(Token::Plus); }
                 '-' => { chars.next(); tokens.push(Token::Minus); }
                 '*' => { chars.next(); tokens.push(Token::Multiply); }
-                '=' => { chars.next(); tokens.push(Token::Assign); }
+                '=' => {
+                    chars.next();
+                    if let Some('=') = chars.peek() {
+                        chars.next();
+                        tokens.push(Token::Equal);
+                    } else {
+                        tokens.push(Token::Assign);
+                    }
+                }
+                '!' => {
+                    chars.next();
+                    if let Some('=') = chars.peek() {
+                        chars.next();
+                        tokens.push(Token::NotEqual);
+                    } else {
+                        // Invalid token, skip
+                        chars.next();
+                    }
+                }
+                '<' => {
+                    chars.next();
+                    if let Some('=') = chars.peek() {
+                        chars.next();
+                        tokens.push(Token::LessEqual);
+                    } else {
+                        tokens.push(Token::Less);
+                    }
+                }
+                '>' => {
+                    chars.next();
+                    if let Some('=') = chars.peek() {
+                        chars.next();
+                        tokens.push(Token::GreaterEqual);
+                    } else {
+                        tokens.push(Token::Greater);
+                    }
+                }
                 ';' => { chars.next(); tokens.push(Token::Semicolon); }
                 '(' => { chars.next(); tokens.push(Token::LeftParen); }
                 ')' => { chars.next(); tokens.push(Token::RightParen); }
                 '{' => { chars.next(); tokens.push(Token::LeftBrace); }
                 '}' => { chars.next(); tokens.push(Token::RightBrace); }
                 ',' => { chars.next(); tokens.push(Token::Comma); }
+                ':' => { chars.next(); tokens.push(Token::Colon); }
 
                 // String literals
                 '"' => tokens.push(Self::lex_string(&mut chars)),
@@ -121,6 +158,57 @@ impl Lexer {
             "escreva" => Token::Escreva,
             "texto" => Token::Texto,
             "importar" => Token::Import,
+            "se" => Token::Se,
+            "senao" => {
+                // Check if next token is "se" for "senao se"
+                if let Some(next_char) = chars.peek() {
+                    if next_char.is_whitespace() {
+                        // Look ahead to see if next word is "se"
+                        let mut temp_chars = chars.clone();
+                        // Skip whitespace
+                        while let Some(&ch) = temp_chars.peek() {
+                            if ch.is_whitespace() {
+                                temp_chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                        // Check if next word is "se"
+                        let mut next_word = String::new();
+                        while let Some(&ch) = temp_chars.peek() {
+                            if ch.is_alphabetic() {
+                                next_word.push(ch);
+                                temp_chars.next();
+                            } else {
+                                break;
+                            }
+                        }
+                        if next_word == "se" {
+                            // Consume the "se" part
+                            while let Some(&ch) = chars.peek() {
+                                if ch.is_whitespace() {
+                                    chars.next();
+                                } else {
+                                    break;
+                                }
+                            }
+                            for _ in 0.."se".len() {
+                                chars.next();
+                            }
+                            Token::SenaoSe
+                        } else {
+                            Token::Senao
+                        }
+                    } else {
+                        Token::Senao
+                    }
+                } else {
+                    Token::Senao
+                }
+            },
+            "escolha" => Token::Escolha,
+            "caso" => Token::Caso,
+            "padrao" => Token::Padrao,
             _ => Token::Ident(ident),
         }
     }

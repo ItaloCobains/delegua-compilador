@@ -1,0 +1,11 @@
+var nota = 95;
+
+se (nota >= 90) {
+    escreva("Excelente! Nota A");
+} senao se (nota >= 80) {
+    escreva("Muito bom! Nota B");
+} senao se (nota >= 70) {
+    escreva("Bom! Nota C");
+} senao {
+    escreva("Precisa melhorar. Nota D ou F");
+}
