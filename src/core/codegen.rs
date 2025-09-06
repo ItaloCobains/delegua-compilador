@@ -9,6 +9,24 @@ use inkwell::module::Module;
 use inkwell::builder::Builder;
 use inkwell::values::{IntValue, PointerValue, FunctionValue, BasicValueEnum};
 use inkwell::types::{IntType, PointerType, BasicTypeEnum};
+
+/// Represents the type of a variable
+#[derive(Clone, Copy)]
+enum VariableType<'ctx> {
+    Int(IntType<'ctx>),
+    String(PointerType<'ctx>),
+    Function(PointerType<'ctx>),
+}
+
+impl<'ctx> VariableType<'ctx> {
+    fn as_basic_type_enum(self) -> BasicTypeEnum<'ctx> {
+        match self {
+            VariableType::Int(t) => t.into(),
+            VariableType::String(t) => t.into(),
+            VariableType::Function(t) => t.into(),
+        }
+    }
+}
 use std::collections::HashMap;
 
 use crate::core::ast::{Program, Statement, Expr, BinaryOp};
@@ -22,7 +40,10 @@ pub struct CodeGen<'ctx> {
     builder: Builder<'ctx>,
 
     // Symbol table for variables
-    variables: HashMap<String, (PointerValue<'ctx>, BasicTypeEnum<'ctx>)>,
+    variables: HashMap<String, (PointerValue<'ctx>, VariableType<'ctx>)>,
+
+    // User-defined functions
+    functions: HashMap<String, FunctionValue<'ctx>>,
 
     // Lazy declared built-in functions
     built_in_functions: HashMap<String, FunctionValue<'ctx>>,
@@ -49,6 +70,7 @@ impl<'ctx> CodeGen<'ctx> {
             module,
             builder,
             variables: HashMap::new(),
+            functions: HashMap::new(),
             built_in_functions: HashMap::new(),
             modules: HashMap::new(),
             i64_type,
@@ -163,6 +185,12 @@ impl<'ctx> CodeGen<'ctx> {
                 self.generate_expression(expr)?;
                 Ok(())
             }
+            Statement::FunctionDeclaration { name, params, body } => {
+                self.generate_function_declaration(name.as_ref(), params, body)
+            }
+            Statement::Return(value) => {
+                self.generate_return_statement(value.as_ref())
+            }
         }
     }
 
@@ -196,14 +224,26 @@ impl<'ctx> CodeGen<'ctx> {
                     .map_err(|e| CompilerError::CodeGen(format!("Error building alloca: {:?}", e)))?;
                 self.builder.build_store(alloca, int_val)
                     .map_err(|e| CompilerError::CodeGen(format!("Error building store: {:?}", e)))?;
-                self.variables.insert(name.to_string(), (alloca, self.i64_type.into()));
+                self.variables.insert(name.to_string(), (alloca, VariableType::Int(self.i64_type)));
             }
             BasicValueEnum::PointerValue(ptr_val) => {
-                let alloca = self.builder.build_alloca(self.i8_ptr_type, name)
-                    .map_err(|e| CompilerError::CodeGen(format!("Error building alloca: {:?}", e)))?;
-                self.builder.build_store(alloca, ptr_val)
-                    .map_err(|e| CompilerError::CodeGen(format!("Error building store: {:?}", e)))?;
-                self.variables.insert(name.to_string(), (alloca, self.i8_ptr_type.into()));
+                // Check if this is a function pointer by looking at the expression
+                if let Expr::Function { .. } = value {
+                    // This is a function pointer
+                    let func_ptr_type = ptr_val.get_type();
+                    let alloca = self.builder.build_alloca(func_ptr_type, name)
+                        .map_err(|e| CompilerError::CodeGen(format!("Error building alloca: {:?}", e)))?;
+                    self.builder.build_store(alloca, ptr_val)
+                        .map_err(|e| CompilerError::CodeGen(format!("Error building store: {:?}", e)))?;
+                    self.variables.insert(name.to_string(), (alloca, VariableType::Function(func_ptr_type)));
+                } else {
+                    // This is a string pointer
+                    let alloca = self.builder.build_alloca(self.i8_ptr_type, name)
+                        .map_err(|e| CompilerError::CodeGen(format!("Error building alloca: {:?}", e)))?;
+                    self.builder.build_store(alloca, ptr_val)
+                        .map_err(|e| CompilerError::CodeGen(format!("Error building store: {:?}", e)))?;
+                    self.variables.insert(name.to_string(), (alloca, VariableType::String(self.i8_ptr_type)));
+                }
             }
             _ => return Err(CompilerError::CodeGen("Unsupported value type in variable declaration".to_string())),
         }
@@ -255,7 +295,7 @@ impl<'ctx> CodeGen<'ctx> {
 
             Expr::Identifier(name) => {
                 if let Some(&(var_ptr, var_type)) = self.variables.get(name) {
-                    let loaded = self.builder.build_load(var_type, var_ptr, name)
+                    let loaded = self.builder.build_load(var_type.as_basic_type_enum(), var_ptr, name)
                         .map_err(|e| CompilerError::CodeGen(format!("Error loading variable: {:?}", e)))?;
                     Ok(loaded)
                 } else {
@@ -321,19 +361,65 @@ impl<'ctx> CodeGen<'ctx> {
                 }
             }
 
-            Expr::FunctionCall { name, args } => {
-                match name.as_str() {
-                    "escreva" => self.generate_escreva_call(args),
-                    "texto" => self.generate_texto_call(args),
-                    _ => {
-                        // Check if it's a module function call
-                        if name.contains('.') {
-                            self.generate_module_function_call(name, args)
-                        } else {
-                            Err(CompilerError::CodeGen(format!("Unknown function: {}", name)))
+            Expr::FunctionCall { callee, args } => {
+                match callee.as_ref() {
+                    Expr::Identifier(name) => {
+                        match name.as_str() {
+                            "escreva" => self.generate_escreva_call(args),
+                            "texto" => self.generate_texto_call(args),
+                            _ => {
+                                // Check if it's a user-defined function
+                                if let Some(func) = self.functions.get(name) {
+                                    let func = *func; // Copy the function value
+                                    self.generate_user_function_call(&func, args)
+                                } else if name.contains('.') {
+                                    self.generate_module_function_call(name, args)
+                                } else if self.variables.contains_key(name) {
+                                    // It's a variable that contains a function
+                                    if let Some(&(var_ptr, var_type)) = self.variables.get(name) {
+                                        match var_type {
+                                            VariableType::Function(func_ptr_type) => {
+                                                // For indirect calls, we need the function type, not the pointer type
+                                                // Assume all functions have the same signature: i64 return, i64 params
+                                                let param_types = vec![self.i64_type.into(); args.len()];
+                                                let fn_type = self.i64_type.fn_type(&param_types, false);
+
+                                                // Load the function pointer from the variable
+                                                let func_ptr = self.builder.build_load(func_ptr_type, var_ptr, &format!("load_func_{}", name))
+                                                    .map_err(|e| CompilerError::CodeGen(format!("Error loading function pointer: {:?}", e)))?;
+
+                                                // Generate arguments
+                                                let mut arg_values = Vec::new();
+                                                for arg in args {
+                                                    arg_values.push(self.generate_expression(arg)?.into());
+                                                }
+
+                                                // Call the function indirectly
+                                                let call = self.builder.build_indirect_call(
+                                                    fn_type,
+                                                    func_ptr.into_pointer_value(),
+                                                    &arg_values,
+                                                    &format!("call_{}", name)
+                                                ).map_err(|e| CompilerError::CodeGen(format!("Error building indirect call: {:?}", e)))?;
+
+                                                Ok(call.try_as_basic_value().left().unwrap())
+                                            }
+                                            _ => Err(CompilerError::CodeGen(format!("Variable '{}' is not a function", name))),
+                                        }
+                                    } else {
+                                        Err(CompilerError::CodeGen(format!("Variable '{}' not found", name)))
+                                    }
+                                } else {
+                                    Err(CompilerError::CodeGen(format!("Unknown function: {}", name)))
+                                }
+                            }
                         }
                     }
+                    _ => Err(CompilerError::CodeGen("Function calls through expressions not yet supported".to_string())),
                 }
+            }
+            Expr::Function { params, body } => {
+                self.generate_anonymous_function(&params, &body)
             }
         }
     }
@@ -369,6 +455,25 @@ impl<'ctx> CodeGen<'ctx> {
         // Call the function
         let call = self.builder.build_call(func, &arg_values, "module_call")
             .map_err(|e| CompilerError::CodeGen(format!("Error calling module function: {:?}", e)))?;
+
+        if let Some(return_val) = call.try_as_basic_value().left() {
+            Ok(return_val)
+        } else {
+            // Void function, return a dummy value
+            let zero = self.i64_type.const_int(0, false);
+            Ok(zero.into())
+        }
+    }
+
+    /// Generates code for user-defined function calls
+    fn generate_user_function_call(&mut self, func: &FunctionValue<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        let mut arg_values = Vec::new();
+        for arg in args {
+            arg_values.push(self.generate_expression(arg)?.into());
+        }
+
+        let call = self.builder.build_call(*func, &arg_values, "user_call")
+            .map_err(|e| CompilerError::CodeGen(format!("Error calling user function: {:?}", e)))?;
 
         if let Some(return_val) = call.try_as_basic_value().left() {
             Ok(return_val)
@@ -528,28 +633,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.module.print_to_string().to_string()
     }
 
-    /// Generates IR for a single expression (for testing purposes)
-    /// Creates a temporary main function and generates the expression
-    pub fn generate_expression_only(&mut self, expr: &Expr) -> Result<String, CompilerError> {
-        // Create a temporary main function
-        let fn_type = self.i64_type.fn_type(&[], false);
-        let main_fn = self.module.add_function("main", fn_type, None);
-        let entry_bb = self.context.append_basic_block(main_fn, "entry");
-        self.builder.position_at_end(entry_bb);
 
-        // Generate the expression
-        let result = self.generate_expression(expr)?;
-
-        // Return the result
-        match result {
-            BasicValueEnum::IntValue(val) => {
-                let _ = self.builder.build_return(Some(&val));
-            }
-            _ => return Err(CompilerError::CodeGen("Expression must evaluate to integer".to_string())),
-        };
-
-        Ok(self.get_ir())
-    }
 
     /// Generates code for if statement
     fn generate_if_statement(&mut self, condition: &Expr, then_branch: &[Statement], else_branch: Option<&Vec<Statement>>) -> Result<(), CompilerError> {
@@ -902,6 +986,136 @@ impl<'ctx> CodeGen<'ctx> {
         // TODO: Implement continue with proper loop context
         // For now, this is a placeholder
         Ok(())
+    }
+
+    /// Generates code for function declaration
+    fn generate_function_declaration(&mut self, name: Option<&String>, params: &Vec<String>, body: &Vec<Statement>) -> Result<(), CompilerError> {
+        if let Some(name) = name {
+            // Create function type: i64 return, i64 params
+            let param_types = vec![self.i64_type.into(); params.len()];
+            let fn_type = self.i64_type.fn_type(&param_types, false);
+
+            let func = self.module.add_function(name, fn_type, None);
+
+            // Store the function
+            self.functions.insert(name.clone(), func);
+
+            // Save current builder position and variables
+            let current_block = self.builder.get_insert_block();
+            let saved_variables = self.variables.clone();
+
+            // Create entry block for the function
+            let entry_block = self.context.append_basic_block(func, "entry");
+            self.builder.position_at_end(entry_block);
+
+            // Clear variables for function scope (except global functions)
+            self.variables.clear();
+            // Re-add functions to variables? No, functions are separate.
+
+            // Set up parameters
+            for (i, param) in params.iter().enumerate() {
+                let param_value = func.get_nth_param(i as u32).unwrap().into_int_value();
+                let param_ptr = self.builder.build_alloca(self.i64_type, param)
+                    .map_err(|e| CompilerError::CodeGen(format!("Error allocating parameter: {:?}", e)))?;
+                self.builder.build_store(param_ptr, param_value)
+                    .map_err(|e| CompilerError::CodeGen(format!("Error storing parameter: {:?}", e)))?;
+                self.variables.insert(param.clone(), (param_ptr, VariableType::Int(self.i64_type)));
+            }
+
+            // Generate body
+            for stmt in body {
+                self.generate_statement(stmt)?;
+            }
+
+            // If no return, add a default return
+            if !body.iter().any(|stmt| matches!(stmt, Statement::Return(_))) {
+                self.builder.build_return(Some(&self.i64_type.const_int(0, false)))
+                    .map_err(|e| CompilerError::CodeGen(format!("Error building return: {:?}", e)))?;
+            }
+
+            // Restore variables and builder position
+            self.variables = saved_variables;
+            if let Some(block) = current_block {
+                self.builder.position_at_end(block);
+            }
+        }
+
+        Ok(())
+    }
+
+    /// Generates code for return statement
+    fn generate_return_statement(&mut self, value: Option<&Expr>) -> Result<(), CompilerError> {
+        if let Some(expr) = value {
+            let val = self.generate_expression(expr)?;
+            match val {
+                BasicValueEnum::IntValue(int_val) => {
+                    self.builder.build_return(Some(&int_val))
+                        .map_err(|e| CompilerError::CodeGen(format!("Error building return: {:?}", e)))?;
+                }
+                _ => return Err(CompilerError::CodeGen("Return value must be an integer".to_string())),
+            }
+        } else {
+            self.builder.build_return(Some(&self.i64_type.const_int(0, false)))
+                .map_err(|e| CompilerError::CodeGen(format!("Error building return: {:?}", e)))?;
+        }
+        Ok(())
+    }
+
+    /// Generates code for anonymous function
+    fn generate_anonymous_function(&mut self, params: &[String], body: &[Statement]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        // Generate a unique name for the anonymous function
+        static mut COUNTER: u32 = 0;
+        unsafe {
+            COUNTER += 1;
+        }
+        let func_name = format!("__anon_func_{}", unsafe { COUNTER });
+
+        // Create function type: i64 return, i64 params
+        let param_types = vec![self.i64_type.into(); params.len()];
+        let fn_type = self.i64_type.fn_type(&param_types, false);
+
+        let func = self.module.add_function(&func_name, fn_type, None);
+
+        // Save current builder position and variables
+        let current_block = self.builder.get_insert_block();
+        let saved_variables = self.variables.clone();
+
+        // Create entry block for the function
+        let entry_block = self.context.append_basic_block(func, "entry");
+        self.builder.position_at_end(entry_block);
+
+        // Clear variables for function scope
+        self.variables.clear();
+
+        // Set up parameters
+        for (i, param) in params.iter().enumerate() {
+            let param_value = func.get_nth_param(i as u32).unwrap().into_int_value();
+            let param_ptr = self.builder.build_alloca(self.i64_type, param)
+                .map_err(|e| CompilerError::CodeGen(format!("Error allocating parameter: {:?}", e)))?;
+            self.builder.build_store(param_ptr, param_value)
+                .map_err(|e| CompilerError::CodeGen(format!("Error storing parameter: {:?}", e)))?;
+            self.variables.insert(param.clone(), (param_ptr, VariableType::Int(self.i64_type)));
+        }
+
+        // Generate body
+        for stmt in body {
+            self.generate_statement(stmt)?;
+        }
+
+        // If no return, add a default return
+        if !body.iter().any(|stmt| matches!(stmt, Statement::Return(_))) {
+            self.builder.build_return(Some(&self.i64_type.const_int(0, false)))
+                .map_err(|e| CompilerError::CodeGen(format!("Error building return: {:?}", e)))?;
+        }
+
+        // Restore variables and builder position
+        self.variables = saved_variables;
+        if let Some(block) = current_block {
+            self.builder.position_at_end(block);
+        }
+
+        // Return the function as a pointer
+        Ok(func.as_global_value().as_pointer_value().into())
     }
 }
 

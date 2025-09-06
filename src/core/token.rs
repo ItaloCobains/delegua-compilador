@@ -37,6 +37,9 @@ pub enum Token {
     /// Loop keywords
     Enquanto, Fazer, Para, ParaCada, Sustar, Continua,
 
+    /// Function keywords
+    Funcao, Retorna,
+
     /// Comparison operators
     Equal, NotEqual, Less, Greater, LessEqual, GreaterEqual,
 

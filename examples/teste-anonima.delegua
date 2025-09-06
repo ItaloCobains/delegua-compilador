@@ -1,0 +1,6 @@
+var dobro = funcao(x) {
+  retorna x * 2;
+};
+
+var resultado = dobro(5);
+escreva("Dobro de 5: " + texto(resultado));

@@ -258,6 +258,8 @@ impl Lexer {
             "continua" => Token::Continua,
             "verdadeiro" => Token::Verdadeiro,
             "falso" => Token::Falso,
+            "funcao" => Token::Funcao,
+            "retorna" => Token::Retorna,
             _ => Token::Ident(ident),
         }
     }

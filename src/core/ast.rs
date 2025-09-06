@@ -32,10 +32,16 @@ pub enum Expr {
         right: Box<Expr>,
     },
 
-    /// Function call (e.g., escreva("hello"))
+    /// Function call (e.g., func(args) or expr(args))
     FunctionCall {
-        name: String,
+        callee: Box<Expr>,
         args: Vec<Expr>,
+    },
+
+    /// Anonymous function (e.g., funcao(a) { return a + 1; })
+    Function {
+        params: Vec<String>,
+        body: Vec<Statement>,
     },
 }
 
@@ -124,6 +130,16 @@ pub enum Statement {
 
     /// Function call as a statement
     FunctionCall(Expr),
+
+    /// Function declaration
+    FunctionDeclaration {
+        name: Option<String>,
+        params: Vec<String>,
+        body: Vec<Statement>,
+    },
+
+    /// Return statement
+    Return(Option<Expr>),
 }
 
 /// Complete DC program representation
