@@ -7,6 +7,7 @@ mod core;
 mod cli;
 mod repl;
 mod compiler;
+mod modules;
 
 use cli::{parse_args, print_usage, print_version, handle_result, CompilerMode};
 use repl::Repl;

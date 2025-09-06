@@ -108,7 +108,7 @@ impl Lexer {
         let mut ident = String::new();
 
         while let Some(&ch) = chars.peek() {
-            if ch.is_ascii_alphabetic() || ch.is_ascii_digit() || ch == '_' {
+            if ch.is_ascii_alphabetic() || ch.is_ascii_digit() || ch == '_' || ch == '.' {
                 ident.push(ch);
                 chars.next();
             } else {

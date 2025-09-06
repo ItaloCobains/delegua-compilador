@@ -1,0 +1,10 @@
+importar "math";
+
+var x = -5;
+var abs_x = math.abs(x);
+var pow_result = math.pow(2, 3);
+var sqrt_result = math.sqrt(16);
+
+escreva("abs(-5) = " + texto(abs_x));
+escreva("pow(2, 3) = " + texto(pow_result));
+escreva("sqrt(16) = " + texto(sqrt_result));

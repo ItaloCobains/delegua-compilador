@@ -13,6 +13,7 @@ use std::collections::HashMap;
 
 use crate::core::ast::{Program, Statement, Expr, BinaryOp};
 use crate::core::error::CompilerError;
+use crate::modules::matematica::Matematica;
 
 /// LLVM code generator for the DC language
 pub struct CodeGen<'ctx> {
@@ -139,8 +140,22 @@ impl<'ctx> CodeGen<'ctx> {
     }
 
     /// Generates code for import statement
-    fn generate_import(&mut self, _module: &str, _items: Option<&Vec<String>>) -> Result<(), CompilerError> {
-        // TODO: Implement module loading and function declaration
+    fn generate_import(&mut self, module: &str, _items: Option<&Vec<String>>) -> Result<(), CompilerError> {
+        match module {
+            "matematica" => {
+                let math_module = Matematica::new(self.context);
+                let functions = math_module.declarar_funcoes(&self.module);
+                math_module.gerar_implementacoes(&self.module);
+
+                // Store the functions in the modules map
+                let mut module_functions = HashMap::new();
+                for (name, func) in functions {
+                    module_functions.insert(name, func);
+                }
+                self.modules.insert("matematica".to_string(), module_functions);
+            }
+            _ => return Err(CompilerError::CodeGen(format!("Unknown module: {}", module))),
+        }
         Ok(())
     }
 
@@ -252,13 +267,77 @@ impl<'ctx> CodeGen<'ctx> {
                 }
             }
 
+            Expr::Unary { operator, operand } => {
+                let operand_val = self.generate_expression(operand)?;
+                match operand_val {
+                    BasicValueEnum::IntValue(val) => {
+                        let result = match operator {
+                            BinaryOp::Subtract => self.builder.build_int_neg(val, "neg")
+                                .map_err(|e| CompilerError::CodeGen(format!("Error building unary operation: {:?}", e)))?,
+                            BinaryOp::Add => val, // +x is just x
+                            _ => return Err(CompilerError::CodeGen("Unsupported unary operator".to_string())),
+                        };
+                        Ok(result.into())
+                    }
+                    _ => Err(CompilerError::CodeGen("Unary operations only supported for integers".to_string())),
+                }
+            }
+
             Expr::FunctionCall { name, args } => {
                 match name.as_str() {
                     "escreva" => self.generate_escreva_call(args),
                     "texto" => self.generate_texto_call(args),
-                    _ => Err(CompilerError::CodeGen(format!("Unknown function: {}", name))),
+                    _ => {
+                        // Check if it's a module function call
+                        if name.contains('.') {
+                            self.generate_module_function_call(name, args)
+                        } else {
+                            Err(CompilerError::CodeGen(format!("Unknown function: {}", name)))
+                        }
+                    }
                 }
             }
+        }
+    }
+
+    /// Generates code for module function calls (e.g., matematica.absoluto)
+    fn generate_module_function_call(&mut self, name: &str, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        let parts: Vec<&str> = name.split('.').collect();
+        if parts.len() != 2 {
+            return Err(CompilerError::CodeGen(format!("Invalid module function call: {}", name)));
+        }
+
+        let module_name = parts[0];
+        let function_name = parts[1];
+
+        // Get the function first to avoid borrowing issues
+        let func = if let Some(module_functions) = self.modules.get(module_name) {
+            if let Some(func) = module_functions.get(function_name) {
+                *func
+            } else {
+                return Err(CompilerError::CodeGen(format!("Function '{}' not found in module '{}'", function_name, module_name)));
+            }
+        } else {
+            return Err(CompilerError::CodeGen(format!("Module '{}' not found", module_name)));
+        };
+
+        // Generate arguments
+        let mut arg_values = Vec::new();
+        for arg in args {
+            let arg_val = self.generate_expression(arg)?;
+            arg_values.push(arg_val.into());
+        }
+
+        // Call the function
+        let call = self.builder.build_call(func, &arg_values, "module_call")
+            .map_err(|e| CompilerError::CodeGen(format!("Error calling module function: {:?}", e)))?;
+
+        if let Some(return_val) = call.try_as_basic_value().left() {
+            Ok(return_val)
+        } else {
+            // Void function, return a dummy value
+            let zero = self.i64_type.const_int(0, false);
+            Ok(zero.into())
         }
     }
 

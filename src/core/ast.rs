@@ -16,6 +16,12 @@ pub enum Expr {
     /// Variable reference
     Identifier(String),
 
+    /// Unary operation (e.g., -x)
+    Unary {
+        operator: BinaryOp,
+        operand: Box<Expr>,
+    },
+
     /// Binary operation (e.g., a + b)
     Binary {
         left: Box<Expr>,

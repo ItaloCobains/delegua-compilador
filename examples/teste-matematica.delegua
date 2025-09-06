@@ -1,0 +1,7 @@
+importar "matematica";
+
+escreva("Testando funções matemáticas:");
+escreva("Absoluto de -5: " + texto(matematica.absoluto(-5)));
+escreva("Potência de 2^3: " + texto(matematica.potencia(2, 3)));
+escreva("Raiz quadrada de 16: " + texto(matematica.raiz_quadrada(16)));
+escreva("Raiz quadrada de 25: " + texto(matematica.raiz_quadrada(25)));

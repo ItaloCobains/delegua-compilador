@@ -33,18 +33,18 @@ pub fn compile_file(filename: &str) -> Result<(), CompilerError> {
     codegen.generate(&ast)?;
 
     // Save LLVM IR
-    let ir_filename = format!("{}.ll", filename.trim_end_matches(".dc"));
+    let ir_filename = format!("{}.ll", filename.trim_end_matches(".delegua").trim_end_matches(".dc"));
     fs::write(&ir_filename, codegen.get_ir())
         .map_err(|e| CompilerError::Io(e))?;
     println!("✓ LLVM IR gerado: {}", ir_filename);
 
     // Generate assembly code
-    let asm_filename = format!("{}.s", filename.trim_end_matches(".dc"));
+    let asm_filename = format!("{}.s", filename.trim_end_matches(".delegua").trim_end_matches(".dc"));
     run_command("llc", &["-o", &asm_filename, &ir_filename])?;
     println!("✓ Código assembly gerado: {}", asm_filename);
 
     // Compile and link to binary
-    let binary_filename = filename.trim_end_matches(".dc");
+    let binary_filename = filename.trim_end_matches(".delegua").trim_end_matches(".dc");
     run_command("clang", &[&asm_filename, "-o", binary_filename])?;
     println!("✓ Binário executável gerado: {}", binary_filename);
 

@@ -99,9 +99,9 @@ impl Parser {
         Ok(Statement::FunctionCall(expr))
     }
 
-    /// Parses an import statement: import "module" or import {item1, item2} from "module"
+    /// Parses an import statement: importar "module" or importar {item1, item2} from "module"
     fn parse_import_statement(&mut self) -> Result<Statement, CompilerError> {
-        self.consume(Token::Import, "Expected 'import' keyword")?;
+        self.consume(Token::Import, "Expected 'importar' keyword")?;
 
         if let Token::String(module) = self.current_token().clone() {
             self.advance();
@@ -156,7 +156,7 @@ impl Parser {
         if !self.check(Token::RightParen) {
             loop {
                 args.push(self.parse_expression()?);
-                if !self.match_token(Token::Semicolon) {
+                if !self.match_token(Token::Comma) {
                     break;
                 }
             }
@@ -194,7 +194,7 @@ impl Parser {
 
     /// Parses multiplicative expressions (*, /)
     fn parse_multiplicative(&mut self) -> Result<Expr, CompilerError> {
-        let mut left = self.parse_primary()?;
+        let mut left = self.parse_unary()?;
 
         while self.match_tokens(&[Token::Multiply, Token::Divide]) {
             let operator = match self.previous_token() {
@@ -203,7 +203,7 @@ impl Parser {
                 _ => unreachable!(),
             };
 
-            let right = self.parse_primary()?;
+            let right = self.parse_unary()?;
             left = Expr::Binary {
                 left: Box::new(left),
                 operator,
@@ -212,6 +212,25 @@ impl Parser {
         }
 
         Ok(left)
+    }
+
+    /// Parses unary expressions (-, +)
+    fn parse_unary(&mut self) -> Result<Expr, CompilerError> {
+        if self.match_tokens(&[Token::Plus, Token::Minus]) {
+            let operator = match self.previous_token() {
+                Token::Plus => BinaryOp::Add, // +x is just x
+                Token::Minus => BinaryOp::Subtract, // -x
+                _ => unreachable!(),
+            };
+
+            let right = self.parse_unary()?;
+            Ok(Expr::Unary {
+                operator,
+                operand: Box::new(right),
+            })
+        } else {
+            self.parse_primary()
+        }
     }
 
     /// Parses primary expressions (literals, identifiers, function calls, parentheses)
