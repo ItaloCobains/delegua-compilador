@@ -113,7 +113,7 @@ mod tests {
 
     #[test]
     fn test_parse_args_compile() {
-        let args = CliArgs { mode: CompilerMode::Compile("test.dc".to_string()) };
+        let args = CliArgs { mode: CompilerMode::Compile("test.delegua".to_string()) };
         assert!(matches!(args.mode, CompilerMode::Compile(_)));
     }
 }

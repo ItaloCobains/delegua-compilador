@@ -1,5 +1,0 @@
-var minha_funcao = funcao(a, b) {
-    retorna a + b;
-};
-
-escreva("Resultado: " + texto(minha_funcao(5, 3)));
