@@ -82,6 +82,14 @@ impl Parser {
         Ok(Program { statements })
     }
 
+    pub fn parse_expression_only(&mut self) -> Result<Expr, String> {
+        let expr = self.parse_expression()?;
+        if *self.current_token() != Token::EOF {
+            return Err("Unexpected tokens after expression".to_string());
+        }
+        Ok(expr)
+    }
+
     fn parse_statement(&mut self) -> Result<Statement, String> {
         match self.current_token() {
             Token::Var => self.parse_var_declaration(),

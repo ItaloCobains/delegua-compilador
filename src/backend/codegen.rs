@@ -333,6 +333,103 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(result_buffer.into())
     }
 
+    pub fn has_variable(&self, name: &str) -> bool {
+        self.variables.contains_key(name)
+    }
+
+    pub fn generate_expression_only(&mut self, expr: &Expr) -> Result<String, String> {
+        // Criar um novo módulo temporário para a expressão
+        let temp_context = Context::create();
+        let temp_module = temp_context.create_module("temp_expr");
+        let temp_builder = temp_context.create_builder();
+
+        let temp_i64_type = temp_context.i64_type();
+        let temp_i8_ptr_type = temp_context.ptr_type(inkwell::AddressSpace::default());
+
+        let temp_main_fn = temp_module.add_function("main", temp_i64_type.fn_type(&[], false), None);
+        let temp_basic_block = temp_context.append_basic_block(temp_main_fn, "entry");
+        temp_builder.position_at_end(temp_basic_block);
+
+        // Para simplificar, vamos apenas avaliar expressões simples sem variáveis por enquanto
+        // Isso evita conflitos de nomes no LLVM IR
+        match expr {
+            Expr::Number(n) => {
+                let format_str = temp_context.const_string(b"%lld\n\0", false);
+                let format_global = temp_module.add_global(format_str.get_type(), None, "format_str");
+                format_global.set_initializer(&format_str);
+                let format_ptr = format_global.as_pointer_value();
+
+                let printf_fn = temp_module.add_function("printf", temp_i64_type.fn_type(&[temp_i8_ptr_type.into()], true), None);
+                let val = temp_i64_type.const_int(*n as u64, false);
+
+                temp_builder.build_call(
+                    printf_fn,
+                    &[format_ptr.into(), val.into()],
+                    "printf_call"
+                ).map_err(|e| format!("Error calling printf: {:?}", e))?;
+            }
+            Expr::String(s) => {
+                let format_str = temp_context.const_string(b"%s\n\0", false);
+                let format_global = temp_module.add_global(format_str.get_type(), None, "format_str");
+                format_global.set_initializer(&format_str);
+                let format_ptr = format_global.as_pointer_value();
+
+                let printf_fn = temp_module.add_function("printf", temp_i64_type.fn_type(&[temp_i8_ptr_type.into()], true), None);
+                let string_val = temp_context.const_string(s.as_bytes(), true);
+                let string_global = temp_module.add_global(string_val.get_type(), None, "string_literal");
+                string_global.set_initializer(&string_val);
+                let string_ptr = string_global.as_pointer_value();
+
+                temp_builder.build_call(
+                    printf_fn,
+                    &[format_ptr.into(), string_ptr.into()],
+                    "printf_call"
+                ).map_err(|e| format!("Error calling printf: {:?}", e))?;
+            }
+            Expr::Binary { left, operator, right } => {
+                // Para operações binárias simples sem variáveis
+                if let (Expr::Number(left_val), Expr::Number(right_val)) = (left.as_ref(), right.as_ref()) {
+                    let printf_fn = temp_module.add_function("printf", temp_i64_type.fn_type(&[temp_i8_ptr_type.into()], true), None);
+
+                    let left_const = temp_i64_type.const_int(*left_val as u64, false);
+                    let right_const = temp_i64_type.const_int(*right_val as u64, false);
+
+                    let result = match operator {
+                        BinaryOp::Add => temp_builder.build_int_add(left_const, right_const, "add"),
+                        BinaryOp::Subtract => temp_builder.build_int_sub(left_const, right_const, "sub"),
+                        BinaryOp::Multiply => temp_builder.build_int_mul(left_const, right_const, "mul"),
+                        BinaryOp::Divide => temp_builder.build_int_signed_div(left_const, right_const, "div"),
+                    }.map_err(|e| format!("Error building binary operation: {:?}", e))?;
+
+                    let format_str = temp_context.const_string(b"%lld\n\0", false);
+                    let format_global = temp_module.add_global(format_str.get_type(), None, "format_str");
+                    format_global.set_initializer(&format_str);
+                    let format_ptr = format_global.as_pointer_value();
+
+                    temp_builder.build_call(
+                        printf_fn,
+                        &[format_ptr.into(), result.into()],
+                        "printf_call"
+                    ).map_err(|e| format!("Error calling printf: {:?}", e))?;
+                } else {
+                    return Err("Expressões com variáveis não são suportadas ainda".to_string());
+                }
+            }
+            Expr::Identifier(_) => {
+                return Err("Avaliação de variáveis não implementada ainda".to_string());
+            }
+            Expr::FunctionCall { .. } => {
+                return Err("Chamadas de função não suportadas em expressões".to_string());
+            }
+        }
+
+        let zero = temp_i64_type.const_int(0, false);
+        temp_builder.build_return(Some(&zero))
+            .map_err(|e| format!("Error building return: {:?}", e))?;
+
+        Ok(temp_module.print_to_string().to_string())
+    }
+
     pub fn print_ir(&self) {
         println!("{}", self.module.print_to_string().to_string());
     }
