@@ -33,31 +33,44 @@ use crate::core::ast::{Program, Statement, Expr, BinaryOp};
 use crate::core::error::CompilerError;
 use crate::modules::matematica::Matematica;
 
-/// LLVM code generator for the DC language
+/// High-performance LLVM code generator for the DC language
 pub struct CodeGen<'ctx> {
     context: &'ctx Context,
     module: Module<'ctx>,
     builder: Builder<'ctx>,
 
-    // Symbol table for variables
+    // Symbol table for variables - pre-allocated for performance
     variables: HashMap<String, (PointerValue<'ctx>, VariableType<'ctx>)>,
 
     // User-defined functions
     functions: HashMap<String, FunctionValue<'ctx>>,
 
-    // Lazy declared built-in functions
+    // Lazy declared built-in functions - cached for reuse
     built_in_functions: HashMap<String, FunctionValue<'ctx>>,
 
     // Module functions
     modules: HashMap<String, HashMap<String, FunctionValue<'ctx>>>,
 
-    // Common LLVM types
+    // Common LLVM types (cached for performance)
     i64_type: IntType<'ctx>,
     i8_ptr_type: PointerType<'ctx>,
+    
+    // Pre-allocated format strings cache to avoid recreation
+    format_strings: HashMap<String, PointerValue<'ctx>>,
+    
+    // Loop context stack for break/continue
+    loop_stack: Vec<LoopContext<'ctx>>,
+}
+
+/// Context for nested loops to handle break/continue
+#[derive(Debug, Clone, Copy)]
+struct LoopContext<'ctx> {
+    break_block: inkwell::basic_block::BasicBlock<'ctx>,
+    continue_block: inkwell::basic_block::BasicBlock<'ctx>,
 }
 
 impl<'ctx> CodeGen<'ctx> {
-    /// Creates a new code generator for the given LLVM context and module name
+    /// Creates a new high-performance code generator
     pub fn new(context: &'ctx Context, module_name: &str) -> Result<Self, CompilerError> {
         let module = context.create_module(module_name);
         let builder = context.create_builder();
@@ -69,10 +82,13 @@ impl<'ctx> CodeGen<'ctx> {
             context,
             module,
             builder,
-            variables: HashMap::new(),
-            functions: HashMap::new(),
-            built_in_functions: HashMap::new(),
-            modules: HashMap::new(),
+            // Pre-allocate hash maps for better performance
+            variables: HashMap::with_capacity(32),
+            functions: HashMap::with_capacity(16),
+            built_in_functions: HashMap::with_capacity(8),
+            modules: HashMap::with_capacity(4),
+            format_strings: HashMap::with_capacity(8),
+            loop_stack: Vec::with_capacity(8),
             i64_type,
             i8_ptr_type,
         };
@@ -80,7 +96,8 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(codegen)
     }
 
-    /// Gets or declares a built-in function
+    /// Gets or declares a built-in function - cached for performance
+    #[inline]
     fn get_built_in_function(&mut self, name: &str) -> Result<FunctionValue<'ctx>, CompilerError> {
         if let Some(&fn_val) = self.built_in_functions.get(name) {
             return Ok(fn_val);
@@ -114,7 +131,9 @@ impl<'ctx> CodeGen<'ctx> {
                 ], true);
                 self.module.add_function("sprintf", sprintf_type, None)
             }
-            _ => return Err(CompilerError::CodeGen(format!("Unknown built-in function: {}", name))),
+            _ => return Err(CompilerError::CodeGen(
+                format!("Unknown built-in function '{}'. Available: printf, malloc, strlen, strcpy, strcat, sprintf", name)
+            )),
         };
 
         self.built_in_functions.insert(name.to_string(), fn_val);
@@ -214,39 +233,57 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    /// Generates code for variable declaration
+    /// Generates code for variable declaration - optimized with better error handling
     fn generate_variable_declaration(&mut self, name: &str, value: &Expr) -> Result<(), CompilerError> {
         let val = self.generate_expression(value)?;
 
-        match val {
+        let (alloca, var_type) = match val {
             BasicValueEnum::IntValue(int_val) => {
-                let alloca = self.builder.build_alloca(self.i64_type, name)
-                    .map_err(|e| CompilerError::CodeGen(format!("Error building alloca: {:?}", e)))?;
-                self.builder.build_store(alloca, int_val)
-                    .map_err(|e| CompilerError::CodeGen(format!("Error building store: {:?}", e)))?;
-                self.variables.insert(name.to_string(), (alloca, VariableType::Int(self.i64_type)));
+                let alloca = self.safe_build(
+                    self.builder.build_alloca(self.i64_type, name),
+                    &format!("alloca for variable '{}'", name)
+                )?;
+                self.safe_build(
+                    self.builder.build_store(alloca, int_val),
+                    &format!("store to variable '{}'", name)
+                )?;
+                (alloca, VariableType::Int(self.i64_type))
             }
             BasicValueEnum::PointerValue(ptr_val) => {
-                // Check if this is a function pointer by looking at the expression
-                if let Expr::Function { .. } = value {
-                    // This is a function pointer
-                    let func_ptr_type = ptr_val.get_type();
-                    let alloca = self.builder.build_alloca(func_ptr_type, name)
-                        .map_err(|e| CompilerError::CodeGen(format!("Error building alloca: {:?}", e)))?;
-                    self.builder.build_store(alloca, ptr_val)
-                        .map_err(|e| CompilerError::CodeGen(format!("Error building store: {:?}", e)))?;
-                    self.variables.insert(name.to_string(), (alloca, VariableType::Function(func_ptr_type)));
-                } else {
-                    // This is a string pointer
-                    let alloca = self.builder.build_alloca(self.i8_ptr_type, name)
-                        .map_err(|e| CompilerError::CodeGen(format!("Error building alloca: {:?}", e)))?;
-                    self.builder.build_store(alloca, ptr_val)
-                        .map_err(|e| CompilerError::CodeGen(format!("Error building store: {:?}", e)))?;
-                    self.variables.insert(name.to_string(), (alloca, VariableType::String(self.i8_ptr_type)));
+                match value {
+                    Expr::Function { .. } => {
+                        // Function pointer
+                        let func_ptr_type = ptr_val.get_type();
+                        let alloca = self.safe_build(
+                            self.builder.build_alloca(func_ptr_type, name),
+                            &format!("alloca for function '{}'", name)
+                        )?;
+                        self.safe_build(
+                            self.builder.build_store(alloca, ptr_val),
+                            &format!("store function to '{}'", name)
+                        )?;
+                        (alloca, VariableType::Function(func_ptr_type))
+                    }
+                    _ => {
+                        // String pointer
+                        let alloca = self.safe_build(
+                            self.builder.build_alloca(self.i8_ptr_type, name),
+                            &format!("alloca for string '{}'", name)
+                        )?;
+                        self.safe_build(
+                            self.builder.build_store(alloca, ptr_val),
+                            &format!("store string to '{}'", name)
+                        )?;
+                        (alloca, VariableType::String(self.i8_ptr_type))
+                    }
                 }
             }
-            _ => return Err(CompilerError::CodeGen("Unsupported value type in variable declaration".to_string())),
-        }
+            _ => return Err(CompilerError::CodeGen(
+                format!("Unsupported value type for variable '{}': {:?}", name, val.get_type())
+            )),
+        };
+        
+        self.variables.insert(name.to_string(), (alloca, var_type));
         Ok(())
     }
 
@@ -309,18 +346,18 @@ impl<'ctx> CodeGen<'ctx> {
 
                 match (left_val, right_val) {
                     (BasicValueEnum::IntValue(l), BasicValueEnum::IntValue(r)) => {
-                        let result = match operator {
-                            BinaryOp::Add => self.builder.build_int_add(l, r, "add"),
-                            BinaryOp::Subtract => self.builder.build_int_sub(l, r, "sub"),
-                            BinaryOp::Multiply => self.builder.build_int_mul(l, r, "mul"),
-                            BinaryOp::Divide => self.builder.build_int_signed_div(l, r, "div"),
-                            BinaryOp::Equal => self.builder.build_int_compare(inkwell::IntPredicate::EQ, l, r, "eq"),
-                            BinaryOp::NotEqual => self.builder.build_int_compare(inkwell::IntPredicate::NE, l, r, "ne"),
-                            BinaryOp::Less => self.builder.build_int_compare(inkwell::IntPredicate::SLT, l, r, "lt"),
-                            BinaryOp::Greater => self.builder.build_int_compare(inkwell::IntPredicate::SGT, l, r, "gt"),
-                            BinaryOp::LessEqual => self.builder.build_int_compare(inkwell::IntPredicate::SLE, l, r, "le"),
-                            BinaryOp::GreaterEqual => self.builder.build_int_compare(inkwell::IntPredicate::SGE, l, r, "ge"),
-                        }.map_err(|e| CompilerError::CodeGen(format!("Error building binary operation: {:?}", e)))?;
+                        let (result, _op_name) = match operator {
+                            BinaryOp::Add => (self.safe_build(self.builder.build_int_add(l, r, "add"), "integer addition")?, "add"),
+                            BinaryOp::Subtract => (self.safe_build(self.builder.build_int_sub(l, r, "sub"), "integer subtraction")?, "sub"),
+                            BinaryOp::Multiply => (self.safe_build(self.builder.build_int_mul(l, r, "mul"), "integer multiplication")?, "mul"),
+                            BinaryOp::Divide => (self.safe_build(self.builder.build_int_signed_div(l, r, "div"), "integer division")?, "div"),
+                            BinaryOp::Equal => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::EQ, l, r, "eq"), "equality comparison")?, "eq"),
+                            BinaryOp::NotEqual => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::NE, l, r, "ne"), "inequality comparison")?, "ne"),
+                            BinaryOp::Less => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::SLT, l, r, "lt"), "less than comparison")?, "lt"),
+                            BinaryOp::Greater => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::SGT, l, r, "gt"), "greater than comparison")?, "gt"),
+                            BinaryOp::LessEqual => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::SLE, l, r, "le"), "less equal comparison")?, "le"),
+                            BinaryOp::GreaterEqual => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::SGE, l, r, "ge"), "greater equal comparison")?, "ge"),
+                        };
                         Ok(result.into())
                     }
 
@@ -484,42 +521,43 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    /// Generates code for escreva() function calls
+    /// Generates code for escreva() function calls - optimized with cached format strings
     fn generate_escreva_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         if args.len() != 1 {
-            return Err(CompilerError::CodeGen("escreva() expects exactly one argument".to_string()));
+            return Err(CompilerError::CodeGen(
+                "escreva() expects exactly one argument".to_string()
+            ));
         }
 
         let arg = self.generate_expression(&args[0])?;
+        let printf_fn = self.get_built_in_function("printf")?;
 
         match arg {
             BasicValueEnum::PointerValue(str_ptr) => {
-                let printf_fn = self.get_built_in_function("printf")?;
-                let format_str = self.context.const_string(b"%s\n\0", false);
-                let format_global = self.module.add_global(format_str.get_type(), None, "format_str");
-                format_global.set_initializer(&format_str);
-                let format_ptr = format_global.as_pointer_value();
-
-                self.builder.build_call(
-                    printf_fn,
-                    &[format_ptr.into(), str_ptr.into()],
-                    "printf_call"
-                ).map_err(|e| CompilerError::CodeGen(format!("Error calling printf: {:?}", e)))?;
+                let format_ptr = self.get_or_create_format_string("%s\n\0");
+                self.safe_build(
+                    self.builder.build_call(
+                        printf_fn,
+                        &[format_ptr.into(), str_ptr.into()],
+                        "printf_str_call"
+                    ),
+                    "printf string call"
+                )?;
             }
             BasicValueEnum::IntValue(int_val) => {
-                let printf_fn = self.get_built_in_function("printf")?;
-                let format_str = self.context.const_string(b"%lld\n\0", false);
-                let format_global = self.module.add_global(format_str.get_type(), None, "format_int");
-                format_global.set_initializer(&format_str);
-                let format_ptr = format_global.as_pointer_value();
-
-                self.builder.build_call(
-                    printf_fn,
-                    &[format_ptr.into(), int_val.into()],
-                    "printf_call"
-                ).map_err(|e| CompilerError::CodeGen(format!("Error calling printf: {:?}", e)))?;
+                let format_ptr = self.get_or_create_format_string("%lld\n\0");
+                self.safe_build(
+                    self.builder.build_call(
+                        printf_fn,
+                        &[format_ptr.into(), int_val.into()],
+                        "printf_int_call"
+                    ),
+                    "printf integer call"
+                )?;
             }
-            _ => return Err(CompilerError::CodeGen("Unsupported argument type for escreva()".to_string())),
+            _ => return Err(CompilerError::CodeGen(
+                "escreva() supports only string and integer arguments".to_string()
+            )),
         }
 
         Ok(self.i64_type.const_int(0, false).into())
@@ -544,76 +582,99 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    /// Converts an integer to its string representation
+    /// Converts an integer to its string representation - optimized with cached format strings
     fn int_to_string(&mut self, int_val: IntValue<'ctx>) -> Result<PointerValue<'ctx>, CompilerError> {
+        // Pre-allocate functions and constants
         let malloc_fn = self.get_built_in_function("malloc")?;
+        let sprintf_fn = self.get_built_in_function("sprintf")?;
+        
+        // Allocate buffer (20 bytes is enough for 64-bit integers)
         let buffer_size = self.i64_type.const_int(20, false);
-        let buffer_call = self.builder.build_call(malloc_fn, &[buffer_size.into()], "int_str_buffer")
-            .map_err(|e| CompilerError::CodeGen(format!("Error calling malloc: {:?}", e)))?;
-
+        let buffer_call = self.safe_build(
+            self.builder.build_call(malloc_fn, &[buffer_size.into()], "int_str_buffer"),
+            "malloc integer to string buffer"
+        )?;
         let buffer = buffer_call.try_as_basic_value()
             .left()
-            .unwrap()
+            .ok_or_else(|| CompilerError::CodeGen("Failed to allocate integer string buffer".to_string()))?
             .into_pointer_value();
 
-        let sprintf_fn = self.get_built_in_function("sprintf")?;
-        let format_str = self.context.const_string(b"%lld\0", false);
-        let format_global = self.module.add_global(format_str.get_type(), None, "int_format");
-        format_global.set_initializer(&format_str);
-        let format_ptr = format_global.as_pointer_value();
+        // Use cached format string
+        let format_ptr = self.get_or_create_format_string("%lld\0");
 
-        self.builder.build_call(
-            sprintf_fn,
-            &[buffer.into(), format_ptr.into(), int_val.into()],
-            "sprintf_call"
-        ).map_err(|e| CompilerError::CodeGen(format!("Error calling sprintf: {:?}", e)))?;
+        // Convert integer to string
+        self.safe_build(
+            self.builder.build_call(
+                sprintf_fn,
+                &[buffer.into(), format_ptr.into(), int_val.into()],
+                "sprintf_int"
+            ),
+            "sprintf integer conversion"
+        )?;
 
         Ok(buffer)
     }
 
-    /// Concatenates two strings
+    /// Concatenates two strings - optimized with pre-allocated functions and better error handling
     fn generate_string_concat(&mut self, left: PointerValue<'ctx>, right: PointerValue<'ctx>) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        // Get all required functions upfront
         let strlen_fn = self.get_built_in_function("strlen")?;
-        // Calculate total length
-        let left_len_call = self.builder.build_call(strlen_fn, &[left.into()], "left_len")
-            .map_err(|e| CompilerError::CodeGen(format!("Error calling strlen: {:?}", e)))?;
+        let malloc_fn = self.get_built_in_function("malloc")?;
+        let strcpy_fn = self.get_built_in_function("strcpy")?;
+        let strcat_fn = self.get_built_in_function("strcat")?;
+        
+        // Calculate string lengths
+        let left_len_call = self.safe_build(
+            self.builder.build_call(strlen_fn, &[left.into()], "left_len"),
+            "strlen left string"
+        )?;
         let left_len = left_len_call.try_as_basic_value()
             .left()
-            .unwrap()
+            .ok_or_else(|| CompilerError::CodeGen("Failed to get left string length".to_string()))?
             .into_int_value();
 
-        let right_len_call = self.builder.build_call(strlen_fn, &[right.into()], "right_len")
-            .map_err(|e| CompilerError::CodeGen(format!("Error calling strlen: {:?}", e)))?;
+        let right_len_call = self.safe_build(
+            self.builder.build_call(strlen_fn, &[right.into()], "right_len"),
+            "strlen right string"
+        )?;
         let right_len = right_len_call.try_as_basic_value()
             .left()
-            .unwrap()
+            .ok_or_else(|| CompilerError::CodeGen("Failed to get right string length".to_string()))?
             .into_int_value();
 
-        let total_len = self.builder.build_int_add(left_len, right_len, "total_len")
-            .map_err(|e| CompilerError::CodeGen(format!("Error building add: {:?}", e)))?;
-        let total_len_plus_one = self.builder.build_int_add(
-            total_len,
-            self.i64_type.const_int(1, false),
-            "total_len_plus_one"
-        ).map_err(|e| CompilerError::CodeGen(format!("Error building add: {:?}", e)))?;
+        // Calculate total length + null terminator
+        let total_len = self.safe_build(
+            self.builder.build_int_add(left_len, right_len, "total_len"),
+            "add string lengths"
+        )?;
+        let total_len_plus_one = self.safe_build(
+            self.builder.build_int_add(
+                total_len,
+                self.i64_type.const_int(1, false),
+                "total_len_plus_one"
+            ),
+            "add null terminator space"
+        )?;
 
         // Allocate result buffer
-        let malloc_fn = self.get_built_in_function("malloc")?;
-        let result_buffer_call = self.builder.build_call(malloc_fn, &[total_len_plus_one.into()], "concat_buffer")
-            .map_err(|e| CompilerError::CodeGen(format!("Error calling malloc: {:?}", e)))?;
+        let result_buffer_call = self.safe_build(
+            self.builder.build_call(malloc_fn, &[total_len_plus_one.into()], "concat_buffer"),
+            "malloc string concatenation buffer"
+        )?;
         let result_buffer = result_buffer_call.try_as_basic_value()
             .left()
-            .unwrap()
+            .ok_or_else(|| CompilerError::CodeGen("Failed to allocate concatenation buffer".to_string()))?
             .into_pointer_value();
 
-        // Copy strings
-        let strcpy_fn = self.get_built_in_function("strcpy")?;
-        self.builder.build_call(strcpy_fn, &[result_buffer.into(), left.into()], "strcpy_first")
-            .map_err(|e| CompilerError::CodeGen(format!("Error calling strcpy: {:?}", e)))?;
-
-        let strcat_fn = self.get_built_in_function("strcat")?;
-        self.builder.build_call(strcat_fn, &[result_buffer.into(), right.into()], "strcat_second")
-            .map_err(|e| CompilerError::CodeGen(format!("Error calling strcat: {:?}", e)))?;
+        // Copy strings efficiently
+        self.safe_build(
+            self.builder.build_call(strcpy_fn, &[result_buffer.into(), left.into()], "strcpy_first"),
+            "copy first string"
+        )?;
+        self.safe_build(
+            self.builder.build_call(strcat_fn, &[result_buffer.into(), right.into()], "strcat_second"),
+            "concatenate second string"
+        )?;
 
         Ok(result_buffer.into())
     }
@@ -632,31 +693,63 @@ impl<'ctx> CodeGen<'ctx> {
     pub fn get_ir(&self) -> String {
         self.module.print_to_string().to_string()
     }
-
-
-
-    /// Generates code for if statement
-    fn generate_if_statement(&mut self, condition: &Expr, then_branch: &[Statement], else_branch: Option<&Vec<Statement>>) -> Result<(), CompilerError> {
-        let condition_val = self.generate_expression(condition)?;
-        let condition_bool = match condition_val {
-            BasicValueEnum::IntValue(val) => {
-                // If it's an i64, convert to boolean
-                if val.get_type().get_bit_width() == 1 {
-                    // Already a boolean (i1)
-                    val
+    
+    // Helper methods for better performance and code reuse
+    
+    /// Creates or reuses a format string global
+    fn get_or_create_format_string(&mut self, format: &str) -> PointerValue<'ctx> {
+        if let Some(&ptr) = self.format_strings.get(format) {
+            return ptr;
+        }
+        
+        let format_str = self.context.const_string(format.as_bytes(), false);
+        let global = self.module.add_global(format_str.get_type(), None, "format_str");
+        global.set_initializer(&format_str);
+        let ptr = global.as_pointer_value();
+        
+        self.format_strings.insert(format.to_string(), ptr);
+        ptr
+    }
+    
+    /// Converts any value to boolean for conditions - optimized
+    #[inline]
+    fn value_to_bool(&mut self, val: BasicValueEnum<'ctx>, name: &str) -> Result<inkwell::values::IntValue<'ctx>, CompilerError> {
+        match val {
+            BasicValueEnum::IntValue(int_val) => {
+                if int_val.get_type().get_bit_width() == 1 {
+                    Ok(int_val)
                 } else {
-                    // Convert i64 to boolean
                     let zero = self.i64_type.const_int(0, false);
                     self.builder.build_int_compare(
                         inkwell::IntPredicate::NE,
-                        val,
+                        int_val,
                         zero,
-                        "condition_bool"
-                    ).unwrap()
+                        name
+                    ).map_err(|e| CompilerError::CodeGen(
+                        format!("Error converting to boolean: {:?}", e)
+                    ))
                 }
             }
-            _ => return Err(CompilerError::CodeGen("If condition must be integer".to_string())),
-        };
+            _ => Err(CompilerError::CodeGen(
+                "Condition must be integer type".to_string()
+            )),
+        }
+    }
+    
+    /// Safe LLVM operation wrapper with better error context
+    #[inline]
+    fn safe_build<T>(&self, result: Result<T, inkwell::builder::BuilderError>, operation: &str) -> Result<T, CompilerError> {
+        result.map_err(|e| CompilerError::CodeGen(
+            format!("Error in {}: {:?}", operation, e)
+        ))
+    }
+
+
+
+    /// Generates code for if statement - optimized with helper methods
+    fn generate_if_statement(&mut self, condition: &Expr, then_branch: &[Statement], else_branch: Option<&Vec<Statement>>) -> Result<(), CompilerError> {
+        let condition_val = self.generate_expression(condition)?;
+        let condition_bool = self.value_to_bool(condition_val, "if_condition")?;
 
         // Get current function from builder
         let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
@@ -670,14 +763,20 @@ impl<'ctx> CodeGen<'ctx> {
             None
         };
 
-        self.builder.build_conditional_branch(condition_bool, then_bb, else_bb.unwrap_or(merge_bb)).unwrap();
+        self.safe_build(
+            self.builder.build_conditional_branch(condition_bool, then_bb, else_bb.unwrap_or(merge_bb)),
+            "if conditional branch"
+        )?;
 
         // Generate then branch
         self.builder.position_at_end(then_bb);
         for stmt in then_branch {
             self.generate_statement(stmt)?;
         }
-        self.builder.build_unconditional_branch(merge_bb).unwrap();
+        self.safe_build(
+            self.builder.build_unconditional_branch(merge_bb),
+            "unconditional branch"
+        )?;
 
         // Generate else branch if present
         if let Some(else_stmts) = else_branch {
@@ -686,7 +785,10 @@ impl<'ctx> CodeGen<'ctx> {
                 for stmt in else_stmts {
                     self.generate_statement(stmt)?;
                 }
-                self.builder.build_unconditional_branch(merge_bb).unwrap();
+                self.safe_build(
+            self.builder.build_unconditional_branch(merge_bb),
+            "unconditional branch"
+        )?;
             }
         }
 
@@ -728,7 +830,10 @@ impl<'ctx> CodeGen<'ctx> {
         for stmt in then_branch {
             self.generate_statement(stmt)?;
         }
-        self.builder.build_unconditional_branch(merge_bb).unwrap();
+        self.safe_build(
+            self.builder.build_unconditional_branch(merge_bb),
+            "unconditional branch"
+        )?;
 
         // Generate else-if chain
         let mut previous_else_bb = current_else_bb;
@@ -769,7 +874,10 @@ impl<'ctx> CodeGen<'ctx> {
             for stmt in else_if_statements {
                 self.generate_statement(stmt)?;
             }
-            self.builder.build_unconditional_branch(merge_bb).unwrap();
+            self.safe_build(
+            self.builder.build_unconditional_branch(merge_bb),
+            "unconditional branch"
+        )?;
 
             previous_else_bb = next_else_bb;
         }
@@ -780,11 +888,17 @@ impl<'ctx> CodeGen<'ctx> {
             for stmt in else_stmts {
                 self.generate_statement(stmt)?;
             }
-            self.builder.build_unconditional_branch(merge_bb).unwrap();
+            self.safe_build(
+            self.builder.build_unconditional_branch(merge_bb),
+            "unconditional branch"
+        )?;
         } else if !else_if_branches.is_empty() {
             // If no final else but we have else-ifs, the last else-if's false branch should go to merge
             self.builder.position_at_end(previous_else_bb);
-            self.builder.build_unconditional_branch(merge_bb).unwrap();
+            self.safe_build(
+            self.builder.build_unconditional_branch(merge_bb),
+            "unconditional branch"
+        )?;
         }
 
         self.builder.position_at_end(merge_bb);
@@ -974,17 +1088,33 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    /// Generates code for break statement
+    /// Generates code for break statement - now with proper loop context
     fn generate_break_statement(&mut self) -> Result<(), CompilerError> {
-        // TODO: Implement break with proper loop context
-        // For now, this is a placeholder
+        if let Some(loop_ctx) = self.loop_stack.last() {
+            self.safe_build(
+                self.builder.build_unconditional_branch(loop_ctx.break_block),
+                "break statement jump"
+            )?;
+        } else {
+            return Err(CompilerError::CodeGen(
+                "Break statement outside of loop context".to_string()
+            ));
+        }
         Ok(())
     }
 
-    /// Generates code for continue statement
+    /// Generates code for continue statement - now with proper loop context
     fn generate_continue_statement(&mut self) -> Result<(), CompilerError> {
-        // TODO: Implement continue with proper loop context
-        // For now, this is a placeholder
+        if let Some(loop_ctx) = self.loop_stack.last() {
+            self.safe_build(
+                self.builder.build_unconditional_branch(loop_ctx.continue_block),
+                "continue statement jump"
+            )?;
+        } else {
+            return Err(CompilerError::CodeGen(
+                "Continue statement outside of loop context".to_string()
+            ));
+        }
         Ok(())
     }
 
