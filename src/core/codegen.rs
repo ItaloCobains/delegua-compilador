@@ -1,8 +1,3 @@
-//! # Code Generation Module
-//!
-//! Generates LLVM Intermediate Representation (IR) from the DC language AST.
-//! This module handles the translation of high-level language constructs
-//! into low-level LLVM instructions that can be compiled to machine code.
 
 use inkwell::context::Context;
 use inkwell::module::Module;
@@ -10,7 +5,6 @@ use inkwell::builder::Builder;
 use inkwell::values::{IntValue, PointerValue, FunctionValue, BasicValueEnum};
 use inkwell::types::{IntType, PointerType, BasicTypeEnum};
 
-/// Represents the type of a variable
 #[derive(Clone, Copy)]
 enum VariableType<'ctx> {
     Int(IntType<'ctx>),
@@ -33,36 +27,27 @@ use crate::core::ast::{Program, Statement, Expr, BinaryOp};
 use crate::core::error::CompilerError;
 use crate::modules::matematica::Matematica;
 
-/// High-performance LLVM code generator for the DC language
 pub struct CodeGen<'ctx> {
     context: &'ctx Context,
     module: Module<'ctx>,
     builder: Builder<'ctx>,
 
-    // Symbol table for variables - pre-allocated for performance
     variables: HashMap<String, (PointerValue<'ctx>, VariableType<'ctx>)>,
 
-    // User-defined functions
     functions: HashMap<String, FunctionValue<'ctx>>,
 
-    // Lazy declared built-in functions - cached for reuse
     built_in_functions: HashMap<String, FunctionValue<'ctx>>,
 
-    // Module functions
     modules: HashMap<String, HashMap<String, FunctionValue<'ctx>>>,
 
-    // Common LLVM types (cached for performance)
     i64_type: IntType<'ctx>,
     i8_ptr_type: PointerType<'ctx>,
     
-    // Pre-allocated format strings cache to avoid recreation
     format_strings: HashMap<String, PointerValue<'ctx>>,
     
-    // Loop context stack for break/continue
     loop_stack: Vec<LoopContext<'ctx>>,
 }
 
-/// Context for nested loops to handle break/continue
 #[derive(Debug, Clone, Copy)]
 struct LoopContext<'ctx> {
     break_block: inkwell::basic_block::BasicBlock<'ctx>,
@@ -70,7 +55,6 @@ struct LoopContext<'ctx> {
 }
 
 impl<'ctx> CodeGen<'ctx> {
-    /// Creates a new high-performance code generator
     pub fn new(context: &'ctx Context, module_name: &str) -> Result<Self, CompilerError> {
         let module = context.create_module(module_name);
         let builder = context.create_builder();
@@ -82,7 +66,6 @@ impl<'ctx> CodeGen<'ctx> {
             context,
             module,
             builder,
-            // Pre-allocate hash maps for better performance
             variables: HashMap::with_capacity(32),
             functions: HashMap::with_capacity(16),
             built_in_functions: HashMap::with_capacity(8),
@@ -96,7 +79,6 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(codegen)
     }
 
-    /// Gets or declares a built-in function - cached for performance
     #[inline]
     fn get_built_in_function(&mut self, name: &str) -> Result<FunctionValue<'ctx>, CompilerError> {
         if let Some(&fn_val) = self.built_in_functions.get(name) {
@@ -140,20 +122,16 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(fn_val)
     }
 
-    /// Generates LLVM IR for a complete DC program
     pub fn generate(&mut self, program: &Program) -> Result<(), CompilerError> {
-        // Create main function
         let main_type = self.i64_type.fn_type(&[], false);
         let main_fn = self.module.add_function("main", main_type, None);
         let basic_block = self.context.append_basic_block(main_fn, "entry");
         self.builder.position_at_end(basic_block);
 
-        // Generate code for each statement
         for statement in &program.statements {
             self.generate_statement(statement)?;
         }
 
-        // Return 0 from main
         let zero = self.i64_type.const_int(0, false);
         self.builder.build_return(Some(&zero))
             .map_err(|e| CompilerError::CodeGen(format!("Error building return: {:?}", e)))?;
@@ -161,7 +139,6 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    /// Generates code for a single statement
     fn generate_statement(&mut self, statement: &Statement) -> Result<(), CompilerError> {
         match statement {
             Statement::VarDeclaration { name, value } => {
@@ -213,7 +190,6 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    /// Generates code for import statement
     fn generate_import(&mut self, module: &str, _items: Option<&Vec<String>>) -> Result<(), CompilerError> {
         match module {
             "matematica" => {
@@ -221,7 +197,6 @@ impl<'ctx> CodeGen<'ctx> {
                 let functions = math_module.declarar_funcoes(&self.module);
                 math_module.gerar_implementacoes(&self.module);
 
-                // Store the functions in the modules map
                 let mut module_functions = HashMap::new();
                 for (name, func) in functions {
                     module_functions.insert(name, func);
@@ -233,7 +208,6 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    /// Generates code for variable declaration - optimized with better error handling
     fn generate_variable_declaration(&mut self, name: &str, value: &Expr) -> Result<(), CompilerError> {
         let val = self.generate_expression(value)?;
 
@@ -252,7 +226,6 @@ impl<'ctx> CodeGen<'ctx> {
             BasicValueEnum::PointerValue(ptr_val) => {
                 match value {
                     Expr::Function { .. } => {
-                        // Function pointer
                         let func_ptr_type = ptr_val.get_type();
                         let alloca = self.safe_build(
                             self.builder.build_alloca(func_ptr_type, name),
@@ -265,7 +238,6 @@ impl<'ctx> CodeGen<'ctx> {
                         (alloca, VariableType::Function(func_ptr_type))
                     }
                     _ => {
-                        // String pointer
                         let alloca = self.safe_build(
                             self.builder.build_alloca(self.i8_ptr_type, name),
                             &format!("alloca for string '{}'", name)
@@ -287,7 +259,6 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    /// Generates code for variable assignment
     fn generate_assignment(&mut self, name: &str, value: &Expr) -> Result<(), CompilerError> {
         let val = self.generate_expression(value)?;
 
@@ -309,7 +280,6 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    /// Generates code for expressions
     fn generate_expression(&mut self, expr: &Expr) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         match expr {
             Expr::Number(n) => {
@@ -391,7 +361,6 @@ impl<'ctx> CodeGen<'ctx> {
                         let result = match operator {
                             BinaryOp::Subtract => self.builder.build_int_neg(val, "neg")
                                 .map_err(|e| CompilerError::CodeGen(format!("Error building unary operation: {:?}", e)))?,
-                            BinaryOp::Add => val, // +x is just x
                             _ => return Err(CompilerError::CodeGen("Unsupported unary operator".to_string())),
                         };
                         Ok(result.into())
@@ -407,33 +376,26 @@ impl<'ctx> CodeGen<'ctx> {
                             "escreva" => self.generate_escreva_call(args),
                             "texto" => self.generate_texto_call(args),
                             _ => {
-                                // Check if it's a user-defined function
                                 if let Some(func) = self.functions.get(name) {
-                                    let func = *func; // Copy the function value
+                                    let func = *func;
                                     self.generate_user_function_call(&func, args)
                                 } else if name.contains('.') {
                                     self.generate_module_function_call(name, args)
                                 } else if self.variables.contains_key(name) {
-                                    // It's a variable that contains a function
                                     if let Some(&(var_ptr, var_type)) = self.variables.get(name) {
                                         match var_type {
                                             VariableType::Function(func_ptr_type) => {
-                                                // For indirect calls, we need the function type, not the pointer type
-                                                // Assume all functions have the same signature: i64 return, i64 params
                                                 let param_types = vec![self.i64_type.into(); args.len()];
                                                 let fn_type = self.i64_type.fn_type(&param_types, false);
 
-                                                // Load the function pointer from the variable
                                                 let func_ptr = self.builder.build_load(func_ptr_type, var_ptr, &format!("load_func_{}", name))
                                                     .map_err(|e| CompilerError::CodeGen(format!("Error loading function pointer: {:?}", e)))?;
 
-                                                // Generate arguments
                                                 let mut arg_values = Vec::new();
                                                 for arg in args {
                                                     arg_values.push(self.generate_expression(arg)?.into());
                                                 }
 
-                                                // Call the function indirectly
                                                 let call = self.builder.build_indirect_call(
                                                     fn_type,
                                                     func_ptr.into_pointer_value(),
@@ -471,7 +433,6 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    /// Generates code for module function calls (e.g., matematica.absoluto)
     fn generate_module_function_call(&mut self, name: &str, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         let parts: Vec<&str> = name.split('.').collect();
         if parts.len() != 2 {
@@ -481,7 +442,6 @@ impl<'ctx> CodeGen<'ctx> {
         let module_name = parts[0];
         let function_name = parts[1];
 
-        // Get the function first to avoid borrowing issues
         let func = if let Some(module_functions) = self.modules.get(module_name) {
             if let Some(func) = module_functions.get(function_name) {
                 *func
@@ -492,27 +452,23 @@ impl<'ctx> CodeGen<'ctx> {
             return Err(CompilerError::CodeGen(format!("Module '{}' not found", module_name)));
         };
 
-        // Generate arguments
         let mut arg_values = Vec::new();
         for arg in args {
             let arg_val = self.generate_expression(arg)?;
             arg_values.push(arg_val.into());
         }
 
-        // Call the function
         let call = self.builder.build_call(func, &arg_values, "module_call")
             .map_err(|e| CompilerError::CodeGen(format!("Error calling module function: {:?}", e)))?;
 
         if let Some(return_val) = call.try_as_basic_value().left() {
             Ok(return_val)
         } else {
-            // Void function, return a dummy value
             let zero = self.i64_type.const_int(0, false);
             Ok(zero.into())
         }
     }
 
-    /// Generates code for user-defined function calls
     fn generate_user_function_call(&mut self, func: &FunctionValue<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         let mut arg_values = Vec::new();
         for arg in args {
@@ -525,13 +481,11 @@ impl<'ctx> CodeGen<'ctx> {
         if let Some(return_val) = call.try_as_basic_value().left() {
             Ok(return_val)
         } else {
-            // Void function, return a dummy value
             let zero = self.i64_type.const_int(0, false);
             Ok(zero.into())
         }
     }
 
-    /// Generates code for escreva() function calls - optimized with cached format strings
     fn generate_escreva_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         if args.len() != 1 {
             return Err(CompilerError::CodeGen(
@@ -573,7 +527,6 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(self.i64_type.const_int(0, false).into())
     }
 
-    /// Generates code for texto() function calls
     fn generate_texto_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         if args.len() != 1 {
             return Err(CompilerError::CodeGen("texto() expects exactly one argument".to_string()));
@@ -592,13 +545,10 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    /// Converts an integer to its string representation - optimized with cached format strings
     fn int_to_string(&mut self, int_val: IntValue<'ctx>) -> Result<PointerValue<'ctx>, CompilerError> {
-        // Pre-allocate functions and constants
         let malloc_fn = self.get_built_in_function("malloc")?;
         let sprintf_fn = self.get_built_in_function("sprintf")?;
         
-        // Allocate buffer (20 bytes is enough for 64-bit integers)
         let buffer_size = self.i64_type.const_int(20, false);
         let buffer_call = self.safe_build(
             self.builder.build_call(malloc_fn, &[buffer_size.into()], "int_str_buffer"),
@@ -609,10 +559,8 @@ impl<'ctx> CodeGen<'ctx> {
             .ok_or_else(|| CompilerError::CodeGen("Failed to allocate integer string buffer".to_string()))?
             .into_pointer_value();
 
-        // Use cached format string
         let format_ptr = self.get_or_create_format_string("%lld\0");
 
-        // Convert integer to string
         self.safe_build(
             self.builder.build_call(
                 sprintf_fn,
@@ -625,15 +573,12 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(buffer)
     }
 
-    /// Concatenates two strings - optimized with pre-allocated functions and better error handling
     fn generate_string_concat(&mut self, left: PointerValue<'ctx>, right: PointerValue<'ctx>) -> Result<BasicValueEnum<'ctx>, CompilerError> {
-        // Get all required functions upfront
         let strlen_fn = self.get_built_in_function("strlen")?;
         let malloc_fn = self.get_built_in_function("malloc")?;
         let strcpy_fn = self.get_built_in_function("strcpy")?;
         let strcat_fn = self.get_built_in_function("strcat")?;
         
-        // Calculate string lengths
         let left_len_call = self.safe_build(
             self.builder.build_call(strlen_fn, &[left.into()], "left_len"),
             "strlen left string"
@@ -652,7 +597,6 @@ impl<'ctx> CodeGen<'ctx> {
             .ok_or_else(|| CompilerError::CodeGen("Failed to get right string length".to_string()))?
             .into_int_value();
 
-        // Calculate total length + null terminator
         let total_len = self.safe_build(
             self.builder.build_int_add(left_len, right_len, "total_len"),
             "add string lengths"
@@ -666,7 +610,6 @@ impl<'ctx> CodeGen<'ctx> {
             "add null terminator space"
         )?;
 
-        // Allocate result buffer
         let result_buffer_call = self.safe_build(
             self.builder.build_call(malloc_fn, &[total_len_plus_one.into()], "concat_buffer"),
             "malloc string concatenation buffer"
@@ -676,7 +619,6 @@ impl<'ctx> CodeGen<'ctx> {
             .ok_or_else(|| CompilerError::CodeGen("Failed to allocate concatenation buffer".to_string()))?
             .into_pointer_value();
 
-        // Copy strings efficiently
         self.safe_build(
             self.builder.build_call(strcpy_fn, &[result_buffer.into(), left.into()], "strcpy_first"),
             "copy first string"
@@ -689,24 +631,19 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(result_buffer.into())
     }
 
-    /// Checks if a variable exists in the symbol table
     pub fn has_variable(&self, name: &str) -> bool {
         self.variables.contains_key(name)
     }
 
-    /// Prints the generated LLVM IR to stdout
     pub fn print_ir(&self) {
         println!("{}", self.module.print_to_string().to_string());
     }
 
-    /// Returns the generated LLVM IR as a string
     pub fn get_ir(&self) -> String {
         self.module.print_to_string().to_string()
     }
     
-    // Helper methods for better performance and code reuse
     
-    /// Creates or reuses a format string global
     fn get_or_create_format_string(&mut self, format: &str) -> PointerValue<'ctx> {
         if let Some(&ptr) = self.format_strings.get(format) {
             return ptr;
@@ -721,7 +658,6 @@ impl<'ctx> CodeGen<'ctx> {
         ptr
     }
     
-    /// Converts any value to boolean for conditions - optimized
     #[inline]
     fn value_to_bool(&mut self, val: BasicValueEnum<'ctx>, name: &str) -> Result<inkwell::values::IntValue<'ctx>, CompilerError> {
         match val {
@@ -746,7 +682,6 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
     
-    /// Safe LLVM operation wrapper with better error context
     #[inline]
     fn safe_build<T>(&self, result: Result<T, inkwell::builder::BuilderError>, operation: &str) -> Result<T, CompilerError> {
         result.map_err(|e| CompilerError::CodeGen(
@@ -754,22 +689,17 @@ impl<'ctx> CodeGen<'ctx> {
         ))
     }
     
-    /// Generates integer exponentiation using loop-based approach
     fn generate_integer_power(&mut self, base: inkwell::values::IntValue<'ctx>, exp: inkwell::values::IntValue<'ctx>) -> Result<inkwell::values::IntValue<'ctx>, CompilerError> {
-        // For now, implement a simple pow function using a loop
-        // TODO: For better performance, could use LLVM's powi intrinsic or binary exponentiation
         
         let current_function = self.builder.get_insert_block()
             .ok_or_else(|| CompilerError::CodeGen("No current basic block for power operation".to_string()))?
             .get_parent()
             .ok_or_else(|| CompilerError::CodeGen("No current function for power operation".to_string()))?;
             
-        // Create basic blocks
         let _entry_bb = self.builder.get_insert_block().unwrap();
         let loop_bb = self.context.append_basic_block(current_function, "pow_loop");
         let exit_bb = self.context.append_basic_block(current_function, "pow_exit");
         
-        // Initialize variables
         let result_ptr = self.safe_build(
             self.builder.build_alloca(self.i64_type, "pow_result"),
             "alloca pow result"
@@ -779,7 +709,6 @@ impl<'ctx> CodeGen<'ctx> {
             "alloca pow counter"
         )?;
         
-        // Set initial values: result = 1, counter = exp
         let one = self.i64_type.const_int(1, false);
         let zero = self.i64_type.const_int(0, false);
         
@@ -792,13 +721,11 @@ impl<'ctx> CodeGen<'ctx> {
             "store initial pow counter"
         )?;
         
-        // Jump to loop
         self.safe_build(
             self.builder.build_unconditional_branch(loop_bb),
             "jump to pow loop"
         )?;
         
-        // Loop block: while (counter > 0) { result *= base; counter--; }
         self.builder.position_at_end(loop_bb);
         let counter_val = self.safe_build(
             self.builder.build_load(self.i64_type, counter_ptr, "load_counter"),
@@ -816,7 +743,6 @@ impl<'ctx> CodeGen<'ctx> {
             "pow loop condition"
         )?;
         
-        // Multiply block
         self.builder.position_at_end(multiply_bb);
         let current_result = self.safe_build(
             self.builder.build_load(self.i64_type, result_ptr, "load_result"),
@@ -846,7 +772,6 @@ impl<'ctx> CodeGen<'ctx> {
             "jump back to pow loop"
         )?;
         
-        // Exit block
         self.builder.position_at_end(exit_bb);
         let final_result = self.safe_build(
             self.builder.build_load(self.i64_type, result_ptr, "final_pow_result"),
@@ -856,20 +781,16 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(final_result)
     }
     
-    /// Generates increment/decrement operations (++x, x++, --x, x--)
     fn generate_increment_decrement(&mut self, operand: &Expr, is_increment: bool, prefix: bool) -> Result<BasicValueEnum<'ctx>, CompilerError> {
-        // For now, only support increment/decrement on identifiers (variables)
         if let Expr::Identifier(name) = operand {
             if let Some(&(var_ptr, var_type)) = self.variables.get(name) {
                 match var_type {
                     VariableType::Int(_) => {
-                        // Load current value
                         let current_val = self.safe_build(
                             self.builder.build_load(self.i64_type, var_ptr, &format!("load_{}", name)),
                             &format!("load variable {} for increment/decrement", name)
                         )?.into_int_value();
                         
-                        // Calculate new value
                         let one = self.i64_type.const_int(1, false);
                         let new_val = if is_increment {
                             self.safe_build(
@@ -883,18 +804,16 @@ impl<'ctx> CodeGen<'ctx> {
                             )?
                         };
                         
-                        // Store new value
                         self.safe_build(
                             self.builder.build_store(var_ptr, new_val),
                             &format!("store {}cremented value to {}", 
                                    if is_increment { "in" } else { "de" }, name)
                         )?;
                         
-                        // Return appropriate value based on prefix/postfix
                         let return_val = if prefix {
-                            new_val  // Prefix: return new value (++x, --x)
+                            new_val
                         } else {
-                            current_val  // Postfix: return old value (x++, x--)
+                            current_val 
                         };
                         
                         Ok(return_val.into())
@@ -917,12 +836,10 @@ impl<'ctx> CodeGen<'ctx> {
 
 
 
-    /// Generates code for if statement - optimized with helper methods
     fn generate_if_statement(&mut self, condition: &Expr, then_branch: &[Statement], else_branch: Option<&Vec<Statement>>) -> Result<(), CompilerError> {
         let condition_val = self.generate_expression(condition)?;
         let condition_bool = self.value_to_bool(condition_val, "if_condition")?;
 
-        // Get current function from builder
         let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
         
         let then_bb = self.context.append_basic_block(current_function, "then");
@@ -939,7 +856,6 @@ impl<'ctx> CodeGen<'ctx> {
             "if conditional branch"
         )?;
 
-        // Generate then branch
         self.builder.position_at_end(then_bb);
         for stmt in then_branch {
             self.generate_statement(stmt)?;
@@ -949,7 +865,6 @@ impl<'ctx> CodeGen<'ctx> {
             "unconditional branch"
         )?;
 
-        // Generate else branch if present
         if let Some(else_stmts) = else_branch {
             if let Some(else_block) = else_bb {
                 self.builder.position_at_end(else_block);
@@ -967,11 +882,9 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    /// Generates code for if-else-if statement
     fn generate_if_else_if_statement(&mut self, condition: &Expr, then_branch: &[Statement], else_if_branches: &[(Expr, Vec<Statement>)], else_branch: Option<&Vec<Statement>>) -> Result<(), CompilerError> {
         let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
 
-        // Generate the main if condition
         let condition_val = self.generate_expression(condition)?;
         let condition_bool = match condition_val {
             BasicValueEnum::IntValue(val) => {
@@ -996,7 +909,6 @@ impl<'ctx> CodeGen<'ctx> {
 
         self.builder.build_conditional_branch(condition_bool, then_bb, current_else_bb).unwrap();
 
-        // Generate then branch
         self.builder.position_at_end(then_bb);
         for stmt in then_branch {
             self.generate_statement(stmt)?;
@@ -1006,7 +918,6 @@ impl<'ctx> CodeGen<'ctx> {
             "unconditional branch"
         )?;
 
-        // Generate else-if chain
         let mut previous_else_bb = current_else_bb;
         for (i, (else_if_condition, else_if_statements)) in else_if_branches.iter().enumerate() {
             self.builder.position_at_end(previous_else_bb);
@@ -1040,7 +951,6 @@ impl<'ctx> CodeGen<'ctx> {
 
             self.builder.build_conditional_branch(else_if_condition_bool, else_if_then_bb, next_else_bb).unwrap();
 
-            // Generate else-if then branch
             self.builder.position_at_end(else_if_then_bb);
             for stmt in else_if_statements {
                 self.generate_statement(stmt)?;
@@ -1053,7 +963,6 @@ impl<'ctx> CodeGen<'ctx> {
             previous_else_bb = next_else_bb;
         }
 
-        // Generate final else branch if present
         if let Some(else_stmts) = else_branch {
             self.builder.position_at_end(previous_else_bb);
             for stmt in else_stmts {
@@ -1064,7 +973,6 @@ impl<'ctx> CodeGen<'ctx> {
             "unconditional branch"
         )?;
         } else if !else_if_branches.is_empty() {
-            // If no final else but we have else-ifs, the last else-if's false branch should go to merge
             self.builder.position_at_end(previous_else_bb);
             self.safe_build(
             self.builder.build_unconditional_branch(merge_bb),
@@ -1076,19 +984,13 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    /// Generates code for switch statement
     fn generate_switch_statement(&mut self, _value: &Expr, cases: &[(Expr, Vec<Statement>)], default: Option<&Vec<Statement>>) -> Result<(), CompilerError> {
-        // For now, implement as if-else chain
-        // TODO: Implement proper switch with jump table
         if let Some((first_case_val, first_case_stmts)) = cases.first() {
             let mut else_stmts = Vec::new();
             
-            // Add remaining cases as else-if
             for (_case_val, _case_stmts) in &cases[1..] {
-                // TODO: Generate comparison and statements
             }
             
-            // Add default as else
             if let Some(default_stmts) = default {
                 else_stmts.extend_from_slice(default_stmts);
             }
@@ -1099,7 +1001,6 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    /// Generates code for while statement
     fn generate_while_statement(&mut self, condition: &Expr, body: &[Statement]) -> Result<(), CompilerError> {
         let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
         
@@ -1107,10 +1008,8 @@ impl<'ctx> CodeGen<'ctx> {
         let body_bb = self.context.append_basic_block(current_function, "loop_body");
         let after_bb = self.context.append_basic_block(current_function, "after_loop");
         
-        // Jump to loop condition
         self.builder.build_unconditional_branch(loop_bb).unwrap();
         
-        // Generate loop condition
         self.builder.position_at_end(loop_bb);
         let condition_val = self.generate_expression(condition)?;
         let condition_bool = match condition_val {
@@ -1132,7 +1031,6 @@ impl<'ctx> CodeGen<'ctx> {
         
         self.builder.build_conditional_branch(condition_bool, body_bb, after_bb).unwrap();
         
-        // Generate loop body
         self.builder.position_at_end(body_bb);
         for stmt in body {
             self.generate_statement(stmt)?;
@@ -1143,7 +1041,6 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    /// Generates code for do-while statement
     fn generate_do_while_statement(&mut self, body: &[Statement], condition: &Expr) -> Result<(), CompilerError> {
         let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
         
@@ -1151,17 +1048,14 @@ impl<'ctx> CodeGen<'ctx> {
         let condition_bb = self.context.append_basic_block(current_function, "do_condition");
         let after_bb = self.context.append_basic_block(current_function, "after_do");
         
-        // Jump to body
         self.builder.build_unconditional_branch(body_bb).unwrap();
         
-        // Generate loop body
         self.builder.position_at_end(body_bb);
         for stmt in body {
             self.generate_statement(stmt)?;
         }
         self.builder.build_unconditional_branch(condition_bb).unwrap();
         
-        // Generate condition
         self.builder.position_at_end(condition_bb);
         let condition_val = self.generate_expression(condition)?;
         let condition_bool = match condition_val {
@@ -1187,7 +1081,6 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    /// Generates code for for statement
     fn generate_for_statement(&mut self, initializer: Option<&Statement>, condition: Option<&Expr>, increment: Option<&Expr>, body: &[Statement]) -> Result<(), CompilerError> {
         let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
         
@@ -1197,17 +1090,14 @@ impl<'ctx> CodeGen<'ctx> {
         let increment_bb = self.context.append_basic_block(current_function, "for_increment");
         let after_bb = self.context.append_basic_block(current_function, "after_for");
         
-        // Jump to initializer
         self.builder.build_unconditional_branch(init_bb).unwrap();
         
-        // Generate initializer
         self.builder.position_at_end(init_bb);
         if let Some(init_stmt) = initializer {
             self.generate_statement(init_stmt)?;
         }
         self.builder.build_unconditional_branch(condition_bb).unwrap();
         
-        // Generate condition
         self.builder.position_at_end(condition_bb);
         let condition_bool = if let Some(cond_expr) = condition {
             let condition_val = self.generate_expression(cond_expr)?;
@@ -1228,20 +1118,17 @@ impl<'ctx> CodeGen<'ctx> {
                 _ => return Err(CompilerError::CodeGen("For condition must be integer".to_string())),
             }
         } else {
-            // No condition means infinite loop
             self.context.bool_type().const_int(1, false)
         };
         
         self.builder.build_conditional_branch(condition_bool, body_bb, after_bb).unwrap();
         
-        // Generate body
         self.builder.position_at_end(body_bb);
         for stmt in body {
             self.generate_statement(stmt)?;
         }
         self.builder.build_unconditional_branch(increment_bb).unwrap();
         
-        // Generate increment
         self.builder.position_at_end(increment_bb);
         if let Some(inc_expr) = increment {
             self.generate_expression(inc_expr)?;
@@ -1252,14 +1139,10 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    /// Generates code for for-each statement
     fn generate_for_each_statement(&mut self, _variable: &str, _iterable: &Expr, _body: &[Statement]) -> Result<(), CompilerError> {
-        // TODO: Implement for-each loops
-        // For now, just skip
         Ok(())
     }
 
-    /// Generates code for break statement - now with proper loop context
     fn generate_break_statement(&mut self) -> Result<(), CompilerError> {
         if let Some(loop_ctx) = self.loop_stack.last() {
             self.safe_build(
@@ -1274,7 +1157,6 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    /// Generates code for continue statement - now with proper loop context
     fn generate_continue_statement(&mut self) -> Result<(), CompilerError> {
         if let Some(loop_ctx) = self.loop_stack.last() {
             self.safe_build(
@@ -1289,31 +1171,23 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    /// Generates code for function declaration
     fn generate_function_declaration(&mut self, name: Option<&String>, params: &Vec<String>, body: &Vec<Statement>) -> Result<(), CompilerError> {
         if let Some(name) = name {
-            // Create function type: i64 return, i64 params
             let param_types = vec![self.i64_type.into(); params.len()];
             let fn_type = self.i64_type.fn_type(&param_types, false);
 
             let func = self.module.add_function(name, fn_type, None);
 
-            // Store the function
             self.functions.insert(name.clone(), func);
 
-            // Save current builder position and variables
             let current_block = self.builder.get_insert_block();
             let saved_variables = self.variables.clone();
 
-            // Create entry block for the function
             let entry_block = self.context.append_basic_block(func, "entry");
             self.builder.position_at_end(entry_block);
 
-            // Clear variables for function scope (except global functions)
             self.variables.clear();
-            // Re-add functions to variables? No, functions are separate.
 
-            // Set up parameters
             for (i, param) in params.iter().enumerate() {
                 let param_value = func.get_nth_param(i as u32).unwrap().into_int_value();
                 let param_ptr = self.builder.build_alloca(self.i64_type, param)
@@ -1323,18 +1197,15 @@ impl<'ctx> CodeGen<'ctx> {
                 self.variables.insert(param.clone(), (param_ptr, VariableType::Int(self.i64_type)));
             }
 
-            // Generate body
             for stmt in body {
                 self.generate_statement(stmt)?;
             }
 
-            // If no return, add a default return
             if !body.iter().any(|stmt| matches!(stmt, Statement::Return(_))) {
                 self.builder.build_return(Some(&self.i64_type.const_int(0, false)))
                     .map_err(|e| CompilerError::CodeGen(format!("Error building return: {:?}", e)))?;
             }
 
-            // Restore variables and builder position
             self.variables = saved_variables;
             if let Some(block) = current_block {
                 self.builder.position_at_end(block);
@@ -1344,7 +1215,6 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    /// Generates code for return statement
     fn generate_return_statement(&mut self, value: Option<&Expr>) -> Result<(), CompilerError> {
         if let Some(expr) = value {
             let val = self.generate_expression(expr)?;
@@ -1362,33 +1232,26 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    /// Generates code for anonymous function
     fn generate_anonymous_function(&mut self, params: &[String], body: &[Statement]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
-        // Generate a unique name for the anonymous function
         static mut COUNTER: u32 = 0;
         unsafe {
             COUNTER += 1;
         }
         let func_name = format!("__anon_func_{}", unsafe { COUNTER });
 
-        // Create function type: i64 return, i64 params
         let param_types = vec![self.i64_type.into(); params.len()];
         let fn_type = self.i64_type.fn_type(&param_types, false);
 
         let func = self.module.add_function(&func_name, fn_type, None);
 
-        // Save current builder position and variables
         let current_block = self.builder.get_insert_block();
         let saved_variables = self.variables.clone();
 
-        // Create entry block for the function
         let entry_block = self.context.append_basic_block(func, "entry");
         self.builder.position_at_end(entry_block);
 
-        // Clear variables for function scope
         self.variables.clear();
 
-        // Set up parameters
         for (i, param) in params.iter().enumerate() {
             let param_value = func.get_nth_param(i as u32).unwrap().into_int_value();
             let param_ptr = self.builder.build_alloca(self.i64_type, param)
@@ -1398,24 +1261,20 @@ impl<'ctx> CodeGen<'ctx> {
             self.variables.insert(param.clone(), (param_ptr, VariableType::Int(self.i64_type)));
         }
 
-        // Generate body
         for stmt in body {
             self.generate_statement(stmt)?;
         }
 
-        // If no return, add a default return
         if !body.iter().any(|stmt| matches!(stmt, Statement::Return(_))) {
             self.builder.build_return(Some(&self.i64_type.const_int(0, false)))
                 .map_err(|e| CompilerError::CodeGen(format!("Error building return: {:?}", e)))?;
         }
 
-        // Restore variables and builder position
         self.variables = saved_variables;
         if let Some(block) = current_block {
             self.builder.position_at_end(block);
         }
 
-        // Return the function as a pointer
         Ok(func.as_global_value().as_pointer_value().into())
     }
 }
