@@ -1,0 +1,10 @@
+var a = 1;
+var b = 0;
+var resultado_e = a e b;
+var resultado_ou = a ou b;
+
+escreva("Teste de operadores lógicos:");
+escreva("a = " + texto(a));
+escreva("b = " + texto(b));
+escreva("a e b = " + texto(resultado_e));
+escreva("a ou b = " + texto(resultado_ou));

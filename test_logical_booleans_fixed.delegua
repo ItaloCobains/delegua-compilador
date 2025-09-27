@@ -1,0 +1,13 @@
+var verdade = verdadeiro;
+var mentira = falso;
+
+var and_test = verdade e mentira;
+var or_test = verdade ou mentira;
+var both_true = verdade e verdade;
+var both_false = mentira e mentira;
+
+escreva("Teste com booleanos:");
+escreva("verdadeiro e falso = " + texto(and_test));
+escreva("verdadeiro ou falso = " + texto(or_test));
+escreva("verdadeiro e verdadeiro = " + texto(both_true));
+escreva("falso e falso = " + texto(both_false));

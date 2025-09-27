@@ -1,0 +1,8 @@
+var a = verdadeiro;
+var b = falso;
+var c = a e b;
+var d = a ou b;
+var e = não a;
+escreva("Resultado AND: " + texto(c));
+escreva("Resultado OR: " + texto(d));
+escreva("Resultado NOT: " + texto(e));

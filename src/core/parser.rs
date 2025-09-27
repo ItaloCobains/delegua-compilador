@@ -323,7 +323,39 @@ impl<'a> Parser<'a> {
 
     /// Parses an expression with operator precedence
     fn parse_expression(&mut self) -> Result<Expr, CompilerError> {
-        self.parse_comparison()
+        self.parse_logical_or()
+    }
+
+    fn parse_logical_or(&mut self) -> Result<Expr, CompilerError> {
+        let mut left = self.parse_logical_and()?;
+
+        while matches!(self.current_token(), Token::Ou(_)) {
+            self.advance();
+            let right = self.parse_logical_and()?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                operator: BinaryOp::Or,
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
+    }
+
+    fn parse_logical_and(&mut self) -> Result<Expr, CompilerError> {
+        let mut left = self.parse_comparison()?;
+
+        while matches!(self.current_token(), Token::E(_)) {
+            self.advance();
+            let right = self.parse_comparison()?;
+            left = Expr::Binary {
+                left: Box::new(left),
+                operator: BinaryOp::And,
+                right: Box::new(right),
+            };
+        }
+
+        Ok(left)
     }
 
     /// Parses comparison expressions (<, >, <=, >=, ==, !=) - optimized
@@ -426,7 +458,6 @@ impl<'a> Parser<'a> {
         match self.current_token() {
             Token::Plus(_) => {
                 self.advance();
-                // +x is just x, so we can skip the unary node
                 self.parse_unary()
             }
             Token::Minus(_) => {
@@ -434,6 +465,14 @@ impl<'a> Parser<'a> {
                 let operand = self.parse_unary()?;
                 Ok(Expr::Unary {
                     operator: BinaryOp::Subtract,
+                    operand: Box::new(operand),
+                })
+            }
+            Token::Nao(_) => {
+                self.advance();
+                let operand = self.parse_unary()?;
+                Ok(Expr::Unary {
+                    operator: BinaryOp::Not,
                     operand: Box::new(operand),
                 })
             }

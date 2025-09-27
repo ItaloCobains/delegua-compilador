@@ -270,3 +270,123 @@ mod integration_tests {
     }
 
 }
+
+#[cfg(test)]
+mod logical_operator_tests {
+    use dc::core::lexer::Lexer;
+    use dc::core::parser::Parser;
+    use dc::core::ast::{Expr, BinaryOp};
+    use inkwell::context::Context;
+    use dc::core::codegen::CodeGen;
+
+    #[test]
+    fn test_tokenize_logical_operators() {
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("verdadeiro e falso ou não verdadeiro");
+        assert_eq!(tokens.len(), 6);
+    }
+
+    #[test]
+    fn test_parse_logical_and() {
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("verdadeiro e falso");
+        let mut parser = Parser::new(tokens);
+
+        let expr = parser.parse_expression_only().unwrap();
+        assert_eq!(expr, Expr::Binary {
+            left: Box::new(Expr::Bool(true)),
+            operator: BinaryOp::And,
+            right: Box::new(Expr::Bool(false)),
+        });
+    }
+
+    #[test]
+    fn test_parse_logical_or() {
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("verdadeiro ou falso");
+        let mut parser = Parser::new(tokens);
+
+        let expr = parser.parse_expression_only().unwrap();
+        assert_eq!(expr, Expr::Binary {
+            left: Box::new(Expr::Bool(true)),
+            operator: BinaryOp::Or,
+            right: Box::new(Expr::Bool(false)),
+        });
+    }
+
+    #[test]
+    fn test_parse_logical_not() {
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("não verdadeiro");
+        let mut parser = Parser::new(tokens);
+
+        let expr = parser.parse_expression_only().unwrap();
+        assert_eq!(expr, Expr::Unary {
+            operator: BinaryOp::Not,
+            operand: Box::new(Expr::Bool(true)),
+        });
+    }
+
+    #[test]
+    fn test_logical_operator_precedence() {
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("verdadeiro ou falso e verdadeiro");
+        let mut parser = Parser::new(tokens);
+
+        let expr = parser.parse_expression_only().unwrap();
+        assert_eq!(expr, Expr::Binary {
+            left: Box::new(Expr::Bool(true)),
+            operator: BinaryOp::Or,
+            right: Box::new(Expr::Binary {
+                left: Box::new(Expr::Bool(false)),
+                operator: BinaryOp::And,
+                right: Box::new(Expr::Bool(true)),
+            }),
+        });
+    }
+
+    #[test]
+    fn test_codegen_logical_and() {
+        let context = Context::create();
+        let mut codegen = CodeGen::new(&context, "test_logical").unwrap();
+
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("var resultado = 1 e 0;");
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse().unwrap();
+
+        assert!(codegen.generate(&program).is_ok());
+        let ir = codegen.get_ir();
+        assert!(ir.contains("and"));
+    }
+
+    #[test]
+    fn test_codegen_logical_or() {
+        let context = Context::create();
+        let mut codegen = CodeGen::new(&context, "test_logical").unwrap();
+
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("var resultado = 1 ou 0;");
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse().unwrap();
+
+        assert!(codegen.generate(&program).is_ok());
+        let ir = codegen.get_ir();
+        assert!(ir.contains("or"));
+    }
+
+    #[test]
+    fn test_codegen_logical_not() {
+        let context = Context::create();
+        let mut codegen = CodeGen::new(&context, "test_logical").unwrap();
+
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("var resultado = não 1;");
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse().unwrap();
+
+        assert!(codegen.generate(&program).is_ok());
+        let ir = codegen.get_ir();
+        assert!(ir.contains("not"));
+    }
+}

@@ -72,14 +72,14 @@ pub fn print_usage() {
     println!("    dc [COMMAND]");
     println!();
     println!("COMMANDS:");
-    println!("    repl                    Start interactive REPL");
-    println!("    compile <file.dc>       Compile DC file to executable");
-    println!("    help                    Show this help message");
-    println!("    version                 Show version information");
+    println!("    repl                         Start interactive REPL");
+    println!("    compile <file.delegua>       Compile Delegua file to executable");
+    println!("    help                         Show this help message");
+    println!("    version                      Show version information");
     println!();
     println!("EXAMPLES:");
     println!("    dc repl");
-    println!("    dc compile program.dc");
+    println!("    dc compile program.delegua");
 }
 
 /// Prints version information

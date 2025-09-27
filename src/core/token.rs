@@ -67,6 +67,11 @@ pub enum Token<'a> {
     LessEqual(Position),
     GreaterEqual(Position),
 
+    /// Logical operators
+    E(Position),              // e (AND)
+    Ou(Position),             // ou (OR)
+    Nao(Position),            // não (NOT)
+
     /// Arithmetic operators
     Plus(Position),
     Minus(Position),

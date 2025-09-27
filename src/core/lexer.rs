@@ -290,6 +290,10 @@ impl<'a> Lexer<'a> {
             "funcao" => Token::Funcao(start_pos),
             "função" => Token::Funcao(start_pos),  // Portuguese spelling with accent
             "retorna" => Token::Retorna(start_pos),
+            "e" => Token::E(start_pos),
+            "ou" => Token::Ou(start_pos),
+            "não" => Token::Nao(start_pos),
+            "nao" => Token::Nao(start_pos),  // Alternative spelling without accent
             _ => Token::Ident(ident_slice, start_pos),
         }
     }

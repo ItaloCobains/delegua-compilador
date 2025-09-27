@@ -329,6 +329,9 @@ impl<'ctx> CodeGen<'ctx> {
                             BinaryOp::Greater => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::SGT, l, r, "gt"), "greater than comparison")?, "gt"),
                             BinaryOp::LessEqual => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::SLE, l, r, "le"), "less equal comparison")?, "le"),
                             BinaryOp::GreaterEqual => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::SGE, l, r, "ge"), "greater equal comparison")?, "ge"),
+                            BinaryOp::And => (self.safe_build(self.builder.build_and(l, r, "and"), "logical and")?, "and"),
+                            BinaryOp::Or => (self.safe_build(self.builder.build_or(l, r, "or"), "logical or")?, "or"),
+                            _ => return Err(CompilerError::CodeGen(format!("Unsupported binary operator for integers: {:?}", operator))),
                         };
                         Ok(result.into())
                     }
@@ -361,6 +364,8 @@ impl<'ctx> CodeGen<'ctx> {
                         let result = match operator {
                             BinaryOp::Subtract => self.builder.build_int_neg(val, "neg")
                                 .map_err(|e| CompilerError::CodeGen(format!("Error building unary operation: {:?}", e)))?,
+                            BinaryOp::Not => self.builder.build_not(val, "not")
+                                .map_err(|e| CompilerError::CodeGen(format!("Error building logical not operation: {:?}", e)))?,
                             _ => return Err(CompilerError::CodeGen("Unsupported unary operator".to_string())),
                         };
                         Ok(result.into())

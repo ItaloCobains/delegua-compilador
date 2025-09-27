@@ -1,0 +1,13 @@
+var x = 1;
+var y = 0;
+var z = 1;
+
+var teste1 = x e y ou z;
+var teste2 = x ou y e z;
+var teste3 = x e (y ou z);
+
+escreva("Teste de precedência:");
+escreva("x = " + texto(x) + ", y = " + texto(y) + ", z = " + texto(z));
+escreva("x e y ou z = " + texto(teste1));
+escreva("x ou y e z = " + texto(teste2));
+escreva("x e (y ou z) = " + texto(teste3));

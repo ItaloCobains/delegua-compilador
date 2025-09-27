@@ -57,11 +57,11 @@ pub enum Expr {
     },
 }
 
-/// Binary operators supported by the language
 #[derive(Debug, PartialEq, Clone)]
 pub enum BinaryOp {
     Add, Subtract, Multiply, Divide, Modulo, Power,
     Equal, NotEqual, Less, Greater, LessEqual, GreaterEqual,
+    And, Or, Not,
 }
 
 /// Represents a statement in the DC language
