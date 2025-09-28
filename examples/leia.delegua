@@ -1,0 +1,3 @@
+var texto = leia("Digite algo: ");
+escreva("Você digitou: ");
+escreva(texto);
