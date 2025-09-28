@@ -1,0 +1,13 @@
+// Test simple object with only numbers
+var config = {
+    width: 800,
+    height: 600,
+    version: 1
+};
+
+escreva("Config criado com sucesso!");
+
+// Test property access
+var w = config.width;
+escreva("Width: ");
+escreva(w);

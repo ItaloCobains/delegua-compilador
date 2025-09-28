@@ -390,3 +390,99 @@ mod logical_operator_tests {
         assert!(ir.contains("not"));
     }
 }
+
+#[cfg(test)]
+mod leia_function_tests {
+    use dc::core::lexer::Lexer;
+    use dc::core::parser::Parser;
+    use dc::core::ast::{Expr, Statement};
+    use inkwell::context::Context;
+    use dc::core::codegen::CodeGen;
+
+    #[test]
+    fn test_tokenize_leia() {
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("leia()");
+        assert_eq!(tokens.len(), 4);
+    }
+
+    #[test]
+    fn test_parse_leia_no_args() {
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("leia()");
+        let mut parser = Parser::new(tokens);
+
+        let expr = parser.parse_expression_only().unwrap();
+        assert_eq!(expr, Expr::FunctionCall {
+            callee: Box::new(Expr::Identifier("leia".to_string())),
+            args: vec![],
+        });
+    }
+
+    #[test]
+    fn test_parse_leia_with_prompt() {
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("leia(\"Digite seu nome: \")");
+        let mut parser = Parser::new(tokens);
+
+        let expr = parser.parse_expression_only().unwrap();
+        assert_eq!(expr, Expr::FunctionCall {
+            callee: Box::new(Expr::Identifier("leia".to_string())),
+            args: vec![Expr::String("Digite seu nome: ".to_string())],
+        });
+    }
+
+    #[test]
+    fn test_parse_leia_assignment() {
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("var nome = leia(\"Nome: \");");
+        let mut parser = Parser::new(tokens);
+
+        let program = parser.parse().unwrap();
+        assert_eq!(program.statements.len(), 1);
+
+        match &program.statements[0] {
+            Statement::VarDeclaration { name, value } => {
+                assert_eq!(name, "nome");
+                assert_eq!(*value, Expr::FunctionCall {
+                    callee: Box::new(Expr::Identifier("leia".to_string())),
+                    args: vec![Expr::String("Nome: ".to_string())],
+                });
+            }
+            _ => panic!("Expected variable declaration"),
+        }
+    }
+
+    #[test]
+    fn test_codegen_leia() {
+        let context = Context::create();
+        let mut codegen = CodeGen::new(&context, "test_leia").unwrap();
+
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("var entrada = leia();");
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse().unwrap();
+
+        assert!(codegen.generate(&program).is_ok());
+        let ir = codegen.get_ir();
+        assert!(ir.contains("scanf"));
+        assert!(ir.contains("malloc"));
+    }
+
+    #[test]
+    fn test_codegen_leia_with_prompt() {
+        let context = Context::create();
+        let mut codegen = CodeGen::new(&context, "test_leia").unwrap();
+
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("var entrada = leia(\"Digite: \");");
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse().unwrap();
+
+        assert!(codegen.generate(&program).is_ok());
+        let ir = codegen.get_ir();
+        assert!(ir.contains("scanf"));
+        assert!(ir.contains("printf"));
+        assert!(ir.contains("Digite:"));
+    }
+}

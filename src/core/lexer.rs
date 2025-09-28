@@ -169,8 +169,30 @@ impl<'a> Lexer<'a> {
                 ')' => { self.advance(); tokens.push(Token::RightParen(self.get_position())); }
                 '{' => { self.advance(); tokens.push(Token::LeftBrace(self.get_position())); }
                 '}' => { self.advance(); tokens.push(Token::RightBrace(self.get_position())); }
+                '[' => { self.advance(); tokens.push(Token::LeftBracket(self.get_position())); }
+                ']' => { self.advance(); tokens.push(Token::RightBracket(self.get_position())); }
                 ',' => { self.advance(); tokens.push(Token::Comma(self.get_position())); }
                 ':' => { self.advance(); tokens.push(Token::Colon(self.get_position())); }
+                '.' => {
+                    // Check if it's a decimal number or property access
+                    if let Some(next_ch) = self.chars.clone().nth(1) {
+                        if next_ch.is_ascii_digit() {
+                            // This is part of a decimal number, let it be handled by number parsing
+                            let ch = self.chars.next().unwrap();
+                            self.position.column += 1;
+                            self.position.offset += ch.len_utf8();
+                            tokens.push(Token::Error(ch, self.get_position()));
+                        } else {
+                            // This is property access
+                            self.advance();
+                            tokens.push(Token::Dot(self.get_position()));
+                        }
+                    } else {
+                        // End of input, treat as property access
+                        self.advance();
+                        tokens.push(Token::Dot(self.get_position()));
+                    }
+                }
 
                 // String literals
                 '"' => {
@@ -260,7 +282,7 @@ impl<'a> Lexer<'a> {
         let start_offset = self.position.offset;
 
         while let Some(&ch) = self.chars.peek() {
-            if ch.is_ascii_alphabetic() || ch.is_ascii_digit() || ch == '_' || ch == '.' {
+            if ch.is_ascii_alphabetic() || ch.is_ascii_digit() || ch == '_' {
                 self.advance();
             } else {
                 break;
@@ -274,6 +296,13 @@ impl<'a> Lexer<'a> {
             "var" => Token::Var(start_pos),
             "escreva" => Token::Escreva(start_pos),
             "texto" => Token::Texto(start_pos),
+            "leia" => Token::Leia(start_pos),
+            "comprimento" => Token::Comprimento(start_pos),
+            "maiuscula" => Token::Maiuscula(start_pos),
+            "minuscula" => Token::Minuscula(start_pos),
+            "absoluto" => Token::Absoluto(start_pos),
+            "potencia" => Token::Potencia(start_pos),
+            "raiz_quadrada" => Token::RaizQuadrada(start_pos),
             "importar" => Token::Import(start_pos),
             "se" => Token::Se(start_pos),
             "senao" => self.handle_senao_se(start_pos),

@@ -55,7 +55,8 @@ The DC language supports:
 - Arithmetic expressions (`+`, `-`, `*`, `/`, `%`, `^`)
 - Logical operators (`e` for AND, `ou` for OR, `não` for NOT)
 - String literals and concatenation
-- Function calls like `escreva()` (write) and `texto()` (text conversion)
+- Input/Output functions: `escreva()` (write), `leia()` (read), `texto()` (text conversion)
+- Array literals and indexing (`[1, 2, 3]`, `arr[0]`)
 - Comments with `//`
 - Boolean literals (`verdadeiro`, `falso`)
 
@@ -80,8 +81,9 @@ The compiler generates LLVM IR and uses inkwell for LLVM integration. The CodeGe
 - Variable allocation and storage
 - Arithmetic operations
 - String operations and concatenation
-- Function calls (printf for output)
-- Type management (integers, strings, functions)
+- Array allocation and indexing (using malloc for dynamic arrays)
+- Function calls (printf for output, scanf for input, malloc for memory allocation)
+- Type management (integers, strings, arrays, functions)
 
 --- 
 

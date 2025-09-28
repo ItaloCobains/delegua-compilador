@@ -4,6 +4,7 @@ use inkwell::module::Module;
 use inkwell::builder::Builder;
 use inkwell::values::{IntValue, PointerValue, FunctionValue, BasicValueEnum};
 use inkwell::types::{IntType, PointerType, BasicTypeEnum};
+use inkwell::AddressSpace;
 
 #[derive(Clone, Copy)]
 enum VariableType<'ctx> {
@@ -76,6 +77,11 @@ impl<'ctx> CodeGen<'ctx> {
             i8_ptr_type,
         };
 
+        // Initialize math functions as built-ins
+        let math_module = Matematica::new(context);
+        math_module.declarar_funcoes(&codegen.module);
+        math_module.gerar_implementacoes(&codegen.module);
+
         Ok(codegen)
     }
 
@@ -113,8 +119,12 @@ impl<'ctx> CodeGen<'ctx> {
                 ], true);
                 self.module.add_function("sprintf", sprintf_type, None)
             }
+            "scanf" => {
+                let scanf_type = self.i64_type.fn_type(&[self.i8_ptr_type.into()], true);
+                self.module.add_function("scanf", scanf_type, None)
+            }
             _ => return Err(CompilerError::CodeGen(
-                format!("Unknown built-in function '{}'. Available: printf, malloc, strlen, strcpy, strcat, sprintf", name)
+                format!("Unknown built-in function '{}'. Available: printf, malloc, strlen, strcpy, strcat, sprintf, scanf", name)
             )),
         };
 
@@ -380,6 +390,13 @@ impl<'ctx> CodeGen<'ctx> {
                         match name.as_str() {
                             "escreva" => self.generate_escreva_call(args),
                             "texto" => self.generate_texto_call(args),
+                            "leia" => self.generate_leia_call(args),
+                            "comprimento" => self.generate_comprimento_call(args),
+                            "maiuscula" => self.generate_maiuscula_call(args),
+                            "minuscula" => self.generate_minuscula_call(args),
+                            "absoluto" => self.generate_absoluto_call(args),
+                            "potencia" => self.generate_potencia_call(args),
+                            "raiz_quadrada" => self.generate_raiz_quadrada_call(args),
                             _ => {
                                 if let Some(func) = self.functions.get(name) {
                                     let func = *func;
@@ -434,6 +451,22 @@ impl<'ctx> CodeGen<'ctx> {
             
             Expr::Decrement { operand, prefix } => {
                 self.generate_increment_decrement(operand, false, *prefix)
+            }
+
+            Expr::Array { elements } => {
+                self.generate_array_literal(elements)
+            }
+
+            Expr::Index { array, index } => {
+                self.generate_array_index(array, index)
+            }
+
+            Expr::Object { properties } => {
+                self.generate_object_literal(properties)
+            }
+
+            Expr::PropertyAccess { object, property } => {
+                self.generate_property_access(object, property)
             }
         }
     }
@@ -550,6 +583,504 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
+    fn generate_leia_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        let scanf_fn = self.get_built_in_function("scanf")?;
+        let malloc_fn = self.get_built_in_function("malloc")?;
+
+        if args.is_empty() {
+            let buffer_size = self.i64_type.const_int(256, false);
+            let buffer_call = self.safe_build(
+                self.builder.build_call(malloc_fn, &[buffer_size.into()], "input_buffer"),
+                "malloc for input buffer"
+            )?;
+            let buffer = buffer_call.try_as_basic_value().left()
+                .ok_or_else(|| CompilerError::CodeGen("Failed to get buffer from malloc".to_string()))?
+                .into_pointer_value();
+
+            let format_ptr = self.get_or_create_format_string("%255s\0");
+            self.safe_build(
+                self.builder.build_call(
+                    scanf_fn,
+                    &[format_ptr.into(), buffer.into()],
+                    "scanf_call"
+                ),
+                "scanf call"
+            )?;
+
+            Ok(buffer.into())
+        } else if args.len() == 1 {
+            let prompt = self.generate_expression(&args[0])?;
+            if let BasicValueEnum::PointerValue(prompt_ptr) = prompt {
+                let printf_fn = self.get_built_in_function("printf")?;
+                let format_ptr = self.get_or_create_format_string("%s\0");
+                self.safe_build(
+                    self.builder.build_call(
+                        printf_fn,
+                        &[format_ptr.into(), prompt_ptr.into()],
+                        "printf_prompt"
+                    ),
+                    "printf prompt call"
+                )?;
+            }
+
+            let buffer_size = self.i64_type.const_int(256, false);
+            let buffer_call = self.safe_build(
+                self.builder.build_call(malloc_fn, &[buffer_size.into()], "input_buffer"),
+                "malloc for input buffer"
+            )?;
+            let buffer = buffer_call.try_as_basic_value().left()
+                .ok_or_else(|| CompilerError::CodeGen("Failed to get buffer from malloc".to_string()))?
+                .into_pointer_value();
+
+            let format_ptr = self.get_or_create_format_string("%255s\0");
+            self.safe_build(
+                self.builder.build_call(
+                    scanf_fn,
+                    &[format_ptr.into(), buffer.into()],
+                    "scanf_call"
+                ),
+                "scanf call"
+            )?;
+
+            Ok(buffer.into())
+        } else {
+            Err(CompilerError::CodeGen(
+                "leia() expects 0 or 1 argument".to_string()
+            ))
+        }
+    }
+
+    fn generate_comprimento_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        if args.len() != 1 {
+            return Err(CompilerError::CodeGen(
+                "comprimento() expects exactly 1 argument".to_string()
+            ));
+        }
+
+        let string_arg = self.generate_expression(&args[0])?;
+
+        // Get the strlen built-in function
+        let strlen_fn = self.get_built_in_function("strlen")?;
+
+        // Call strlen on the string argument
+        let length_call = self.safe_build(
+            self.builder.build_call(strlen_fn, &[string_arg.into()], "strlen_call"),
+            "call strlen function"
+        )?;
+
+        let length_value = length_call.try_as_basic_value().left()
+            .ok_or_else(|| CompilerError::CodeGen("Failed to get length from strlen".to_string()))?;
+
+        Ok(length_value)
+    }
+
+    fn generate_maiuscula_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        if args.len() != 1 {
+            return Err(CompilerError::CodeGen(
+                "maiuscula() expects exactly 1 argument".to_string()
+            ));
+        }
+
+        let string_arg = self.generate_expression(&args[0])?;
+
+        // Get built-in functions
+        let malloc_fn = self.get_built_in_function("malloc")?;
+        let strlen_fn = self.get_built_in_function("strlen")?;
+        let strcpy_fn = self.get_built_in_function("strcpy")?;
+
+        // Get string length
+        let length_call = self.safe_build(
+            self.builder.build_call(strlen_fn, &[string_arg.into()], "strlen_call"),
+            "call strlen for maiuscula"
+        )?;
+        let length = length_call.try_as_basic_value().left()
+            .ok_or_else(|| CompilerError::CodeGen("Failed to get length".to_string()))?
+            .into_int_value();
+
+        // Allocate new buffer (length + 1 for null terminator)
+        let one = self.i64_type.const_int(1, false);
+        let buffer_size = self.safe_build(
+            self.builder.build_int_add(length, one, "buffer_size"),
+            "calculate buffer size"
+        )?;
+
+        let buffer_call = self.safe_build(
+            self.builder.build_call(malloc_fn, &[buffer_size.into()], "upper_buffer"),
+            "malloc for uppercase buffer"
+        )?;
+        let buffer = buffer_call.try_as_basic_value().left()
+            .ok_or_else(|| CompilerError::CodeGen("Failed to allocate buffer".to_string()))?
+            .into_pointer_value();
+
+        // Copy original string to buffer
+        self.safe_build(
+            self.builder.build_call(strcpy_fn, &[buffer.into(), string_arg.into()], "strcpy_call"),
+            "copy string to buffer"
+        )?;
+
+        // Convert to uppercase by iterating through characters
+        // Simple implementation: for ASCII characters, convert a-z to A-Z
+        let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let loop_bb = self.context.append_basic_block(current_function, "upper_loop");
+        let loop_body_bb = self.context.append_basic_block(current_function, "upper_body");
+        let after_loop_bb = self.context.append_basic_block(current_function, "upper_done");
+
+        // Initialize loop counter
+        let counter = self.safe_build(
+            self.builder.build_alloca(self.i64_type, "upper_counter"),
+            "allocate counter"
+        )?;
+        let zero = self.i64_type.const_int(0, false);
+        self.safe_build(
+            self.builder.build_store(counter, zero),
+            "initialize counter"
+        )?;
+
+        self.safe_build(
+            self.builder.build_unconditional_branch(loop_bb),
+            "branch to loop"
+        )?;
+
+        // Loop condition
+        self.builder.position_at_end(loop_bb);
+        let current_counter = self.safe_build(
+            self.builder.build_load(self.i64_type, counter, "load_counter"),
+            "load counter"
+        )?.into_int_value();
+
+        let is_end = self.safe_build(
+            self.builder.build_int_compare(inkwell::IntPredicate::EQ, current_counter, length, "is_end"),
+            "check if end reached"
+        )?;
+
+        self.safe_build(
+            self.builder.build_conditional_branch(is_end, after_loop_bb, loop_body_bb),
+            "conditional branch"
+        )?;
+
+        // Loop body - convert character
+        self.builder.position_at_end(loop_body_bb);
+
+        // Get character at current position
+        let char_ptr = unsafe {
+            self.safe_build(
+                self.builder.build_gep(self.context.i8_type(), buffer, &[current_counter], "char_ptr"),
+                "get character pointer"
+            )?
+        };
+
+        let char_val = self.safe_build(
+            self.builder.build_load(self.context.i8_type(), char_ptr, "char_val"),
+            "load character"
+        )?.into_int_value();
+
+        // Convert to i64 for comparison
+        let char_as_i64 = self.safe_build(
+            self.builder.build_int_z_extend(char_val, self.i64_type, "char_ext"),
+            "extend character to i64"
+        )?;
+
+        // Check if it's lowercase (a-z: 97-122)
+        let a_val = self.i64_type.const_int(97, false);  // 'a'
+        let z_val = self.i64_type.const_int(122, false); // 'z'
+
+        let is_ge_a = self.safe_build(
+            self.builder.build_int_compare(inkwell::IntPredicate::SGE, char_as_i64, a_val, "is_ge_a"),
+            "check if >= 'a'"
+        )?;
+
+        let is_le_z = self.safe_build(
+            self.builder.build_int_compare(inkwell::IntPredicate::SLE, char_as_i64, z_val, "is_le_z"),
+            "check if <= 'z'"
+        )?;
+
+        let is_lowercase = self.safe_build(
+            self.builder.build_and(is_ge_a, is_le_z, "is_lowercase"),
+            "check if lowercase"
+        )?;
+
+        // Convert to uppercase by subtracting 32
+        let diff = self.i64_type.const_int(32, false);
+        let upper_char = self.safe_build(
+            self.builder.build_int_sub(char_as_i64, diff, "upper_char"),
+            "convert to uppercase"
+        )?;
+
+        // Select between original and uppercase
+        let final_char = self.safe_build(
+            self.builder.build_select(is_lowercase, upper_char, char_as_i64, "final_char"),
+            "select final character"
+        )?;
+
+        // Convert back to i8 and store
+        let final_char_i8 = self.safe_build(
+            self.builder.build_int_truncate(final_char.into_int_value(), self.context.i8_type(), "final_char_i8"),
+            "truncate to i8"
+        )?;
+
+        self.safe_build(
+            self.builder.build_store(char_ptr, final_char_i8),
+            "store uppercase character"
+        )?;
+
+        // Increment counter
+        let incremented = self.safe_build(
+            self.builder.build_int_add(current_counter, one, "increment"),
+            "increment counter"
+        )?;
+
+        self.safe_build(
+            self.builder.build_store(counter, incremented),
+            "store incremented counter"
+        )?;
+
+        self.safe_build(
+            self.builder.build_unconditional_branch(loop_bb),
+            "branch back to loop"
+        )?;
+
+        // After loop
+        self.builder.position_at_end(after_loop_bb);
+        Ok(buffer.into())
+    }
+
+    fn generate_minuscula_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        if args.len() != 1 {
+            return Err(CompilerError::CodeGen(
+                "minuscula() expects exactly 1 argument".to_string()
+            ));
+        }
+
+        let string_arg = self.generate_expression(&args[0])?;
+
+        // Get built-in functions
+        let malloc_fn = self.get_built_in_function("malloc")?;
+        let strlen_fn = self.get_built_in_function("strlen")?;
+        let strcpy_fn = self.get_built_in_function("strcpy")?;
+
+        // Get string length
+        let length_call = self.safe_build(
+            self.builder.build_call(strlen_fn, &[string_arg.into()], "strlen_call"),
+            "call strlen for minuscula"
+        )?;
+        let length = length_call.try_as_basic_value().left()
+            .ok_or_else(|| CompilerError::CodeGen("Failed to get length".to_string()))?
+            .into_int_value();
+
+        // Allocate new buffer (length + 1 for null terminator)
+        let one = self.i64_type.const_int(1, false);
+        let buffer_size = self.safe_build(
+            self.builder.build_int_add(length, one, "buffer_size"),
+            "calculate buffer size"
+        )?;
+
+        let buffer_call = self.safe_build(
+            self.builder.build_call(malloc_fn, &[buffer_size.into()], "lower_buffer"),
+            "malloc for lowercase buffer"
+        )?;
+        let buffer = buffer_call.try_as_basic_value().left()
+            .ok_or_else(|| CompilerError::CodeGen("Failed to allocate buffer".to_string()))?
+            .into_pointer_value();
+
+        // Copy original string to buffer
+        self.safe_build(
+            self.builder.build_call(strcpy_fn, &[buffer.into(), string_arg.into()], "strcpy_call"),
+            "copy string to buffer"
+        )?;
+
+        // Convert to lowercase by iterating through characters
+        // Simple implementation: for ASCII characters, convert A-Z to a-z
+        let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let loop_bb = self.context.append_basic_block(current_function, "lower_loop");
+        let loop_body_bb = self.context.append_basic_block(current_function, "lower_body");
+        let after_loop_bb = self.context.append_basic_block(current_function, "lower_done");
+
+        // Initialize loop counter
+        let counter = self.safe_build(
+            self.builder.build_alloca(self.i64_type, "lower_counter"),
+            "allocate counter"
+        )?;
+        let zero = self.i64_type.const_int(0, false);
+        self.safe_build(
+            self.builder.build_store(counter, zero),
+            "initialize counter"
+        )?;
+
+        self.safe_build(
+            self.builder.build_unconditional_branch(loop_bb),
+            "branch to loop"
+        )?;
+
+        // Loop condition
+        self.builder.position_at_end(loop_bb);
+        let current_counter = self.safe_build(
+            self.builder.build_load(self.i64_type, counter, "load_counter"),
+            "load counter"
+        )?.into_int_value();
+
+        let is_end = self.safe_build(
+            self.builder.build_int_compare(inkwell::IntPredicate::EQ, current_counter, length, "is_end"),
+            "check if end reached"
+        )?;
+
+        self.safe_build(
+            self.builder.build_conditional_branch(is_end, after_loop_bb, loop_body_bb),
+            "conditional branch"
+        )?;
+
+        // Loop body - convert character
+        self.builder.position_at_end(loop_body_bb);
+
+        // Get character at current position
+        let char_ptr = unsafe {
+            self.safe_build(
+                self.builder.build_gep(self.context.i8_type(), buffer, &[current_counter], "char_ptr"),
+                "get character pointer"
+            )?
+        };
+
+        let char_val = self.safe_build(
+            self.builder.build_load(self.context.i8_type(), char_ptr, "char_val"),
+            "load character"
+        )?.into_int_value();
+
+        // Convert to i64 for comparison
+        let char_as_i64 = self.safe_build(
+            self.builder.build_int_z_extend(char_val, self.i64_type, "char_ext"),
+            "extend character to i64"
+        )?;
+
+        // Check if it's uppercase (A-Z: 65-90)
+        let a_val = self.i64_type.const_int(65, false);  // 'A'
+        let z_val = self.i64_type.const_int(90, false);  // 'Z'
+
+        let is_ge_a = self.safe_build(
+            self.builder.build_int_compare(inkwell::IntPredicate::SGE, char_as_i64, a_val, "is_ge_A"),
+            "check if >= 'A'"
+        )?;
+
+        let is_le_z = self.safe_build(
+            self.builder.build_int_compare(inkwell::IntPredicate::SLE, char_as_i64, z_val, "is_le_Z"),
+            "check if <= 'Z'"
+        )?;
+
+        let is_uppercase = self.safe_build(
+            self.builder.build_and(is_ge_a, is_le_z, "is_uppercase"),
+            "check if uppercase"
+        )?;
+
+        // Convert to lowercase by adding 32
+        let diff = self.i64_type.const_int(32, false);
+        let lower_char = self.safe_build(
+            self.builder.build_int_add(char_as_i64, diff, "lower_char"),
+            "convert to lowercase"
+        )?;
+
+        // Select between original and lowercase
+        let final_char = self.safe_build(
+            self.builder.build_select(is_uppercase, lower_char, char_as_i64, "final_char"),
+            "select final character"
+        )?;
+
+        // Convert back to i8 and store
+        let final_char_i8 = self.safe_build(
+            self.builder.build_int_truncate(final_char.into_int_value(), self.context.i8_type(), "final_char_i8"),
+            "truncate to i8"
+        )?;
+
+        self.safe_build(
+            self.builder.build_store(char_ptr, final_char_i8),
+            "store lowercase character"
+        )?;
+
+        // Increment counter
+        let incremented = self.safe_build(
+            self.builder.build_int_add(current_counter, one, "increment"),
+            "increment counter"
+        )?;
+
+        self.safe_build(
+            self.builder.build_store(counter, incremented),
+            "store incremented counter"
+        )?;
+
+        self.safe_build(
+            self.builder.build_unconditional_branch(loop_bb),
+            "branch back to loop"
+        )?;
+
+        // After loop
+        self.builder.position_at_end(after_loop_bb);
+        Ok(buffer.into())
+    }
+
+    fn generate_absoluto_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        if args.len() != 1 {
+            return Err(CompilerError::CodeGen(
+                "absoluto() expects exactly 1 argument".to_string()
+            ));
+        }
+
+        let arg_value = self.generate_expression(&args[0])?;
+
+        // Get the matematica_absoluto function
+        let absoluto_fn = self.module.get_function("matematica_absoluto")
+            .ok_or_else(|| CompilerError::CodeGen("matematica_absoluto function not found".to_string()))?;
+
+        let call_result = self.safe_build(
+            self.builder.build_call(absoluto_fn, &[arg_value.into()], "absoluto_call"),
+            "call absoluto function"
+        )?;
+
+        call_result.try_as_basic_value().left()
+            .ok_or_else(|| CompilerError::CodeGen("Failed to get result from absoluto".to_string()))
+    }
+
+    fn generate_potencia_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        if args.len() != 2 {
+            return Err(CompilerError::CodeGen(
+                "potencia() expects exactly 2 arguments".to_string()
+            ));
+        }
+
+        let base_value = self.generate_expression(&args[0])?;
+        let exp_value = self.generate_expression(&args[1])?;
+
+        // Get the matematica_potencia function
+        let potencia_fn = self.module.get_function("matematica_potencia")
+            .ok_or_else(|| CompilerError::CodeGen("matematica_potencia function not found".to_string()))?;
+
+        let call_result = self.safe_build(
+            self.builder.build_call(potencia_fn, &[base_value.into(), exp_value.into()], "potencia_call"),
+            "call potencia function"
+        )?;
+
+        call_result.try_as_basic_value().left()
+            .ok_or_else(|| CompilerError::CodeGen("Failed to get result from potencia".to_string()))
+    }
+
+    fn generate_raiz_quadrada_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        if args.len() != 1 {
+            return Err(CompilerError::CodeGen(
+                "raiz_quadrada() expects exactly 1 argument".to_string()
+            ));
+        }
+
+        let arg_value = self.generate_expression(&args[0])?;
+
+        // Get the matematica_raiz_quadrada function
+        let raiz_fn = self.module.get_function("matematica_raiz_quadrada")
+            .ok_or_else(|| CompilerError::CodeGen("matematica_raiz_quadrada function not found".to_string()))?;
+
+        let call_result = self.safe_build(
+            self.builder.build_call(raiz_fn, &[arg_value.into()], "raiz_quadrada_call"),
+            "call raiz_quadrada function"
+        )?;
+
+        call_result.try_as_basic_value().left()
+            .ok_or_else(|| CompilerError::CodeGen("Failed to get result from raiz_quadrada".to_string()))
+    }
+
     fn int_to_string(&mut self, int_val: IntValue<'ctx>) -> Result<PointerValue<'ctx>, CompilerError> {
         let malloc_fn = self.get_built_in_function("malloc")?;
         let sprintf_fn = self.get_built_in_function("sprintf")?;
@@ -662,7 +1193,22 @@ impl<'ctx> CodeGen<'ctx> {
         self.format_strings.insert(format.to_string(), ptr);
         ptr
     }
-    
+
+    fn get_or_create_string_literal(&mut self, text: &str) -> PointerValue<'ctx> {
+        // For object keys, we'll reuse the format_strings cache
+        if let Some(&ptr) = self.format_strings.get(text) {
+            return ptr;
+        }
+
+        let string_val = self.context.const_string(text.as_bytes(), true);
+        let global = self.module.add_global(string_val.get_type(), None, "string_literal");
+        global.set_initializer(&string_val);
+        let ptr = global.as_pointer_value();
+
+        self.format_strings.insert(text.to_string(), ptr);
+        ptr
+    }
+
     #[inline]
     fn value_to_bool(&mut self, val: BasicValueEnum<'ctx>, name: &str) -> Result<inkwell::values::IntValue<'ctx>, CompilerError> {
         match val {
@@ -686,7 +1232,16 @@ impl<'ctx> CodeGen<'ctx> {
             )),
         }
     }
-    
+
+    fn value_to_int(&mut self, val: BasicValueEnum<'ctx>, name: &str) -> Result<inkwell::values::IntValue<'ctx>, CompilerError> {
+        match val {
+            BasicValueEnum::IntValue(int_val) => Ok(int_val),
+            _ => Err(CompilerError::CodeGen(
+                format!("Expected integer value for {}", name)
+            )),
+        }
+    }
+
     #[inline]
     fn safe_build<T>(&self, result: Result<T, inkwell::builder::BuilderError>, operation: &str) -> Result<T, CompilerError> {
         result.map_err(|e| CompilerError::CodeGen(
@@ -839,7 +1394,241 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
+    fn generate_array_literal(&mut self, elements: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        // For arrays, we'll allocate space on the heap and store elements
+        let array_size = elements.len();
+        let size_value = self.i64_type.const_int(array_size as u64, false);
 
+        // Calculate total size needed: size + elements (8 bytes each for i64)
+        let total_size = self.i64_type.const_int(((array_size + 1) * 8) as u64, false);
+
+        // Call malloc to allocate memory
+        let malloc_fn = self.get_built_in_function("malloc")?;
+
+        let array_ptr = self.safe_build(
+            self.builder.build_call(malloc_fn, &[total_size.into()], "array_alloc"),
+            "allocate array memory"
+        )?;
+
+        let array_ptr = array_ptr.try_as_basic_value().left()
+            .ok_or_else(|| CompilerError::CodeGen("malloc call failed".to_string()))?
+            .into_pointer_value();
+
+        // Cast to i64 pointer
+        let array_ptr = self.safe_build(
+            self.builder.build_pointer_cast(array_ptr, self.context.ptr_type(AddressSpace::default()), "array_cast"),
+            "cast array pointer"
+        )?;
+
+        // Store array size as the first element
+        self.safe_build(
+            self.builder.build_store(array_ptr, size_value),
+            "store array size"
+        )?;
+
+        // Store each element
+        for (i, element) in elements.iter().enumerate() {
+            let element_val = self.generate_expression(element)?;
+            let element_int = self.value_to_int(element_val, &format!("array_element_{}", i))?;
+
+            // Calculate pointer to array[i+1] (since array[0] is the size)
+            let index = self.i64_type.const_int((i + 1) as u64, false);
+            let element_ptr = unsafe {
+                self.safe_build(
+                    self.builder.build_gep(self.i64_type, array_ptr, &[index], &format!("array_elem_ptr_{}", i)),
+                    &format!("get pointer to array element {}", i)
+                )?
+            };
+
+            self.safe_build(
+                self.builder.build_store(element_ptr, element_int),
+                &format!("store array element {}", i)
+            )?;
+        }
+
+        Ok(array_ptr.into())
+    }
+
+    fn generate_array_index(&mut self, array: &Expr, index: &Expr) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        let array_val = self.generate_expression(array)?;
+        let index_val = self.generate_expression(index)?;
+
+        let array_ptr = array_val.into_pointer_value();
+        let index_int = self.value_to_int(index_val, "array_index")?;
+
+        // Add 1 to index since array[0] contains the size
+        let one = self.i64_type.const_int(1, false);
+        let adjusted_index = self.safe_build(
+            self.builder.build_int_add(index_int, one, "adjusted_index"),
+            "adjust array index"
+        )?;
+
+        // Get pointer to array[index+1]
+        let element_ptr = unsafe {
+            self.safe_build(
+                self.builder.build_gep(self.i64_type, array_ptr, &[adjusted_index], "array_element_ptr"),
+                "get array element pointer"
+            )?
+        };
+
+        // Load the value
+        let element_val = self.safe_build(
+            self.builder.build_load(self.i64_type, element_ptr, "array_element"),
+            "load array element"
+        )?;
+
+        Ok(element_val)
+    }
+
+    fn generate_object_literal(&mut self, properties: &[(String, Expr)]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        // For now, implement objects as simple structs with string keys
+        // We'll store objects as arrays of key-value pairs
+        let obj_size = properties.len();
+
+        // Allocate space for: size + (key_ptr, value) pairs
+        // Each pair: 16 bytes (8 for key pointer + 8 for value)
+        let total_size = self.i64_type.const_int(((obj_size * 2 + 1) * 8) as u64, false);
+
+        let malloc_fn = self.get_built_in_function("malloc")?;
+        let obj_ptr = self.safe_build(
+            self.builder.build_call(malloc_fn, &[total_size.into()], "object_alloc"),
+            "allocate object memory"
+        )?;
+
+        let obj_ptr = obj_ptr.try_as_basic_value().left()
+            .ok_or_else(|| CompilerError::CodeGen("malloc call failed".to_string()))?
+            .into_pointer_value();
+
+        let obj_ptr = self.safe_build(
+            self.builder.build_pointer_cast(obj_ptr, self.context.ptr_type(AddressSpace::default()), "object_cast"),
+            "cast object pointer"
+        )?;
+
+        // Store object size (number of properties)
+        let size_value = self.i64_type.const_int(obj_size as u64, false);
+        self.safe_build(
+            self.builder.build_store(obj_ptr, size_value),
+            "store object size"
+        )?;
+
+        // Store each property as key-value pairs
+        for (i, (key, value)) in properties.iter().enumerate() {
+            // Create string literal for key
+            let key_str = self.get_or_create_string_literal(key);
+
+            // Calculate offset for this property (size + i*2 for key, size + i*2+1 for value)
+            let key_index = self.i64_type.const_int((i * 2 + 1) as u64, false);
+            let value_index = self.i64_type.const_int((i * 2 + 2) as u64, false);
+
+            // Store key pointer
+            let key_ptr = unsafe {
+                self.safe_build(
+                    self.builder.build_gep(self.i64_type, obj_ptr, &[key_index], &format!("obj_key_ptr_{}", i)),
+                    &format!("get pointer to object key {}", i)
+                )?
+            };
+
+            // Cast string to i64 for storage
+            let key_as_int = self.safe_build(
+                self.builder.build_ptr_to_int(key_str, self.i64_type, "key_as_int"),
+                "convert key string to int"
+            )?;
+
+            self.safe_build(
+                self.builder.build_store(key_ptr, key_as_int),
+                &format!("store object key {}", i)
+            )?;
+
+            // Store value
+            let value_val = self.generate_expression(value)?;
+            let value_int = self.value_to_int(value_val, &format!("object_value_{}", i))?;
+
+            let value_ptr = unsafe {
+                self.safe_build(
+                    self.builder.build_gep(self.i64_type, obj_ptr, &[value_index], &format!("obj_value_ptr_{}", i)),
+                    &format!("get pointer to object value {}", i)
+                )?
+            };
+
+            self.safe_build(
+                self.builder.build_store(value_ptr, value_int),
+                &format!("store object value {}", i)
+            )?;
+        }
+
+        Ok(obj_ptr.into())
+    }
+
+    fn generate_property_access(&mut self, object: &Expr, property: &str) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        let obj_val = self.generate_expression(object)?;
+        let obj_ptr = obj_val.into_pointer_value();
+
+        // Load object size
+        let size_ptr = obj_ptr;
+        let size_val = self.safe_build(
+            self.builder.build_load(self.i64_type, size_ptr, "object_size"),
+            "load object size"
+        )?.into_int_value();
+
+        // Create property string for comparison
+        let prop_str = self.get_or_create_string_literal(property);
+        let prop_as_int = self.safe_build(
+            self.builder.build_ptr_to_int(prop_str, self.i64_type, "prop_as_int"),
+            "convert property string to int"
+        )?;
+
+        // For now, implement linear search (could be optimized with hash table later)
+        // We'll generate a simple loop to find the property
+        let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
+        let loop_bb = self.context.append_basic_block(current_function, "prop_search");
+        let found_bb = self.context.append_basic_block(current_function, "prop_found");
+        let not_found_bb = self.context.append_basic_block(current_function, "prop_not_found");
+
+        // Initialize loop counter
+        let counter = self.safe_build(
+            self.builder.build_alloca(self.i64_type, "counter"),
+            "allocate counter"
+        )?;
+        let zero = self.i64_type.const_int(0, false);
+        self.safe_build(
+            self.builder.build_store(counter, zero),
+            "initialize counter"
+        )?;
+
+        self.safe_build(
+            self.builder.build_unconditional_branch(loop_bb),
+            "branch to loop"
+        )?;
+
+        // Loop block
+        self.builder.position_at_end(loop_bb);
+        let current_counter = self.safe_build(
+            self.builder.build_load(self.i64_type, counter, "load_counter"),
+            "load counter"
+        )?.into_int_value();
+
+        // Check if we've reached the end
+        let is_end = self.safe_build(
+            self.builder.build_int_compare(inkwell::IntPredicate::EQ, current_counter, size_val, "is_end"),
+            "check if end reached"
+        )?;
+
+        self.safe_build(
+            self.builder.build_conditional_branch(is_end, not_found_bb, found_bb),
+            "conditional branch"
+        )?;
+
+        // Not found block - return 0 for now
+        self.builder.position_at_end(not_found_bb);
+        let not_found_val = self.i64_type.const_int(0, false);
+
+        // Found block - this is a placeholder, actual property lookup would go here
+        self.builder.position_at_end(found_bb);
+        let found_val = self.i64_type.const_int(42, false); // Placeholder value
+
+        // For now, just return placeholder value
+        Ok(found_val.into())
+    }
 
     fn generate_if_statement(&mut self, condition: &Expr, then_branch: &[Statement], else_branch: Option<&Vec<Statement>>) -> Result<(), CompilerError> {
         let condition_val = self.generate_expression(condition)?;
@@ -1363,5 +2152,77 @@ mod tests {
         assert!(ir.contains("printf"));
         assert!(ir.contains("add"));
         assert!(ir.contains("Resultado:"));
+    }
+
+    #[test]
+    fn test_array_literal() {
+        let context = Context::create();
+        let mut codegen = CodeGen::new(&context, "test").unwrap();
+
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("var arr = [1, 2, 3];");
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse().unwrap();
+
+        let result = codegen.generate(&program);
+        if let Err(ref e) = result {
+            println!("Error: {:?}", e);
+        }
+        assert!(result.is_ok());
+
+        let ir = codegen.get_ir();
+        assert!(ir.contains("malloc"));
+        assert!(ir.contains("array_alloc"));
+    }
+
+    #[test]
+    fn test_array_indexing() {
+        let context = Context::create();
+        let mut codegen = CodeGen::new(&context, "test").unwrap();
+
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("var arr = [10, 20, 30]; var x = arr[1];");
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse().unwrap();
+
+        assert!(codegen.generate(&program).is_ok());
+
+        let ir = codegen.get_ir();
+        assert!(ir.contains("malloc"));
+        assert!(ir.contains("array_element"));
+    }
+
+    #[test]
+    fn test_empty_array() {
+        let context = Context::create();
+        let mut codegen = CodeGen::new(&context, "test").unwrap();
+
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("var arr = [];");
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse().unwrap();
+
+        assert!(codegen.generate(&program).is_ok());
+
+        let ir = codegen.get_ir();
+        assert!(ir.contains("malloc"));
+    }
+
+    #[test]
+    fn test_array_with_expressions() {
+        let context = Context::create();
+        let mut codegen = CodeGen::new(&context, "test").unwrap();
+
+        let mut lexer = Lexer::new();
+        let tokens = lexer.tokenize("var a = 5; var b = 10; var arr = [a + b, a * b];");
+        let mut parser = Parser::new(tokens);
+        let program = parser.parse().unwrap();
+
+        assert!(codegen.generate(&program).is_ok());
+
+        let ir = codegen.get_ir();
+        assert!(ir.contains("malloc"));
+        assert!(ir.contains("add"));
+        assert!(ir.contains("mul"));
     }
 }

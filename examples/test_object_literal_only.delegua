@@ -1,0 +1,7 @@
+// Test only object literal creation (no property access)
+var config = {
+    width: 800,
+    height: 600
+};
+
+escreva("Object created successfully!");

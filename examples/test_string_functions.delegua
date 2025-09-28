@@ -1,0 +1,28 @@
+// Test string functions
+var texto = "Hello World";
+
+escreva("Original: ");
+escreva(texto);
+
+var tamanho = comprimento(texto);
+escreva("Comprimento: ");
+escreva(tamanho);
+
+var maiusculo = maiuscula(texto);
+escreva("Maiuscula: ");
+escreva(maiusculo);
+
+var minusculo = minuscula(texto);
+escreva("Minuscula: ");
+escreva(minusculo);
+
+// Test with mixed case
+var misto = "DeLegUa";
+escreva("Misto original: ");
+escreva(misto);
+
+escreva("Misto maiuscula: ");
+escreva(maiuscula(misto));
+
+escreva("Misto minuscula: ");
+escreva(minuscula(misto));

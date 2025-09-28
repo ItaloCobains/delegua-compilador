@@ -85,6 +85,7 @@ impl<'a> Parser<'a> {
         match self.current_token() {
             Token::Var(_) => self.parse_variable_declaration(),
             Token::Escreva(_) => self.parse_function_call_statement(),
+            Token::Leia(_) => self.parse_function_call_statement(),
             Token::Import(_) => self.parse_import_statement(),
             Token::Se(_) => self.parse_if_statement(),
             Token::Escolha(_) => self.parse_switch_statement(),
@@ -120,27 +121,17 @@ impl<'a> Parser<'a> {
     fn parse_variable_declaration(&mut self) -> Result<Statement, CompilerError> {
         self.consume(Self::token_with_pos(Token::Var), "Expected 'var' keyword")?;
 
-        if let Token::Ident(name, _) = self.current_token() {
-            let name = name.to_string();
-            self.advance();
+        let name = self.consume_identifier("Expected variable name")?;
+        self.consume(Self::token_with_pos(Token::Assign), "Expected '=' after variable name")?;
+        let initializer = self.parse_expression()?;
+        self.consume(Self::token_with_pos(Token::Semicolon), "Expected ';' after variable declaration")?;
 
-            self.consume(Self::token_with_pos(Token::Assign), "Expected '=' after variable name")?;
-            let initializer = self.parse_expression()?;
-            self.consume(Self::token_with_pos(Token::Semicolon), "Expected ';' after variable declaration")?;
-
-            Ok(Statement::VarDeclaration { name, value: initializer })
-        } else {
-            Err(CompilerError::Parser("Expected variable name".to_string()))
-        }
+        Ok(Statement::VarDeclaration { name, value: initializer })
     }
 
     /// Parses an assignment, function call, or increment/decrement: ident = expr; or ident(args); or ident++; or ++ident;
     fn parse_assignment_or_call(&mut self) -> Result<Statement, CompilerError> {
-        let name = match self.current_token() {
-            Token::Ident(name, _) => name.to_string(),
-            _ => return Err(CompilerError::Parser("Expected identifier".to_string())),
-        };
-        self.advance();
+        let name = self.consume_identifier("Expected identifier")?;
 
         if self.match_token(Self::token_with_pos(Token::Assign)) {
             let value = self.parse_expression()?;
@@ -517,6 +508,28 @@ impl<'a> Parser<'a> {
                         prefix: false,
                     };
                 }
+                Token::LeftBracket(_) => {
+                    self.advance();
+                    let index = self.parse_expression()?;
+                    self.consume(Self::token_with_pos(Token::RightBracket), "Expected ']' after array index")?;
+                    expr = Expr::Index {
+                        array: Box::new(expr),
+                        index: Box::new(index),
+                    };
+                }
+                Token::Dot(_) => {
+                    self.advance();
+                    if let Token::Ident(name, _) = self.current_token() {
+                        let property = name.to_string();
+                        self.advance();
+                        expr = Expr::PropertyAccess {
+                            object: Box::new(expr),
+                            property,
+                        };
+                    } else {
+                        return Err(CompilerError::Parser("Expected property name after '.'".to_string()));
+                    }
+                }
                 _ => break,
             }
         }
@@ -546,13 +559,17 @@ impl<'a> Parser<'a> {
             }
             Token::Escreva(_) => {
                 self.advance();
-                self.consume(Self::token_with_pos(Token::LeftParen), "Expected '(' after 'escreva'")?;
-                let args = self.parse_arguments()?;
-                self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after function arguments")?;
-                Ok(Expr::FunctionCall {
-                    callee: Box::new(Expr::Identifier("escreva".to_string())),
-                    args,
-                })
+                if self.match_token(Self::token_with_pos(Token::LeftParen)) {
+                    let args = self.parse_arguments()?;
+                    self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after function arguments")?;
+                    Ok(Expr::FunctionCall {
+                        callee: Box::new(Expr::Identifier("escreva".to_string())),
+                        args,
+                    })
+                } else {
+                    // Treat as variable identifier
+                    Ok(Expr::Identifier("escreva".to_string()))
+                }
             }
             Token::Ident(name, _) => {
                 let name = name.to_string();
@@ -580,19 +597,176 @@ impl<'a> Parser<'a> {
             }
             Token::Texto(_) => {
                 self.advance();
-                self.consume(Self::token_with_pos(Token::LeftParen), "Expected '(' after 'texto'")?;
-                let args = self.parse_arguments()?;
-                self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after function arguments")?;
-                Ok(Expr::FunctionCall {
-                    callee: Box::new(Expr::Identifier("texto".to_string())),
-                    args,
-                })
+                if self.match_token(Self::token_with_pos(Token::LeftParen)) {
+                    let args = self.parse_arguments()?;
+                    self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after function arguments")?;
+                    Ok(Expr::FunctionCall {
+                        callee: Box::new(Expr::Identifier("texto".to_string())),
+                        args,
+                    })
+                } else {
+                    // Treat as variable identifier
+                    Ok(Expr::Identifier("texto".to_string()))
+                }
+            }
+            Token::Leia(_) => {
+                self.advance();
+                if self.match_token(Self::token_with_pos(Token::LeftParen)) {
+                    let args = self.parse_arguments()?;
+                    self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after function arguments")?;
+                    Ok(Expr::FunctionCall {
+                        callee: Box::new(Expr::Identifier("leia".to_string())),
+                        args,
+                    })
+                } else {
+                    // Treat as variable identifier
+                    Ok(Expr::Identifier("leia".to_string()))
+                }
+            }
+            Token::Comprimento(_) => {
+                self.advance();
+                if self.match_token(Self::token_with_pos(Token::LeftParen)) {
+                    let args = self.parse_arguments()?;
+                    self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after function arguments")?;
+                    Ok(Expr::FunctionCall {
+                        callee: Box::new(Expr::Identifier("comprimento".to_string())),
+                        args,
+                    })
+                } else {
+                    // Treat as variable identifier
+                    Ok(Expr::Identifier("comprimento".to_string()))
+                }
+            }
+            Token::Maiuscula(_) => {
+                self.advance();
+                if self.match_token(Self::token_with_pos(Token::LeftParen)) {
+                    let args = self.parse_arguments()?;
+                    self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after function arguments")?;
+                    Ok(Expr::FunctionCall {
+                        callee: Box::new(Expr::Identifier("maiuscula".to_string())),
+                        args,
+                    })
+                } else {
+                    // Treat as variable identifier
+                    Ok(Expr::Identifier("maiuscula".to_string()))
+                }
+            }
+            Token::Minuscula(_) => {
+                self.advance();
+                if self.match_token(Self::token_with_pos(Token::LeftParen)) {
+                    let args = self.parse_arguments()?;
+                    self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after function arguments")?;
+                    Ok(Expr::FunctionCall {
+                        callee: Box::new(Expr::Identifier("minuscula".to_string())),
+                        args,
+                    })
+                } else {
+                    // Treat as variable identifier
+                    Ok(Expr::Identifier("minuscula".to_string()))
+                }
+            }
+            Token::Absoluto(_) => {
+                self.advance();
+                if self.match_token(Self::token_with_pos(Token::LeftParen)) {
+                    let args = self.parse_arguments()?;
+                    self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after function arguments")?;
+                    Ok(Expr::FunctionCall {
+                        callee: Box::new(Expr::Identifier("absoluto".to_string())),
+                        args,
+                    })
+                } else {
+                    // Treat as variable identifier
+                    Ok(Expr::Identifier("absoluto".to_string()))
+                }
+            }
+            Token::Potencia(_) => {
+                self.advance();
+                if self.match_token(Self::token_with_pos(Token::LeftParen)) {
+                    let args = self.parse_arguments()?;
+                    self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after function arguments")?;
+                    Ok(Expr::FunctionCall {
+                        callee: Box::new(Expr::Identifier("potencia".to_string())),
+                        args,
+                    })
+                } else {
+                    // Treat as variable identifier
+                    Ok(Expr::Identifier("potencia".to_string()))
+                }
+            }
+            Token::RaizQuadrada(_) => {
+                self.advance();
+                if self.match_token(Self::token_with_pos(Token::LeftParen)) {
+                    let args = self.parse_arguments()?;
+                    self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after function arguments")?;
+                    Ok(Expr::FunctionCall {
+                        callee: Box::new(Expr::Identifier("raiz_quadrada".to_string())),
+                        args,
+                    })
+                } else {
+                    // Treat as variable identifier
+                    Ok(Expr::Identifier("raiz_quadrada".to_string()))
+                }
             }
             Token::LeftParen(_) => {
                 self.advance();
                 let expr = self.parse_expression()?;
                 self.consume(Self::token_with_pos(Token::RightParen), "Expected ')' after expression")?;
                 Ok(expr)
+            }
+            Token::LeftBracket(_) => {
+                self.advance();
+                let mut elements = Vec::new();
+
+                if !matches!(self.current_token(), Token::RightBracket(_)) {
+                    loop {
+                        elements.push(self.parse_expression()?);
+
+                        if matches!(self.current_token(), Token::Comma(_)) {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
+                self.consume(Self::token_with_pos(Token::RightBracket), "Expected ']' after array elements")?;
+                Ok(Expr::Array { elements })
+            }
+            Token::LeftBrace(_) => {
+                self.advance();
+                let mut properties = Vec::new();
+
+                if !matches!(self.current_token(), Token::RightBrace(_)) {
+                    loop {
+                        // Parse key (must be identifier or string)
+                        let key = match self.current_token() {
+                            Token::Ident(name, _) => {
+                                let key = name.to_string();
+                                self.advance();
+                                key
+                            }
+                            Token::String(name, _) => {
+                                let key = name.to_string();
+                                self.advance();
+                                key
+                            }
+                            _ => return Err(CompilerError::Parser("Expected property name in object literal".to_string())),
+                        };
+
+                        self.consume(Self::token_with_pos(Token::Colon), "Expected ':' after property name")?;
+                        let value = self.parse_expression()?;
+                        properties.push((key, value));
+
+                        if matches!(self.current_token(), Token::Comma(_)) {
+                            self.advance();
+                        } else {
+                            break;
+                        }
+                    }
+                }
+
+                self.consume(Self::token_with_pos(Token::RightBrace), "Expected '}' after object properties")?;
+                Ok(Expr::Object { properties })
             }
             _ => Err(CompilerError::Parser(format!(
                 "Unexpected token in expression: {:?}", self.current_token()
@@ -642,14 +816,30 @@ impl<'a> Parser<'a> {
         }
     }
 
+    /// Helper method to extract identifier name from tokens (including built-in function tokens)
+    fn token_to_identifier_name(&self, token: &Token) -> Option<String> {
+        match token {
+            Token::Ident(name, _) => Some(name.to_string()),
+            // Allow built-in function names to be used as identifiers
+            Token::Escreva(_) => Some("escreva".to_string()),
+            Token::Texto(_) => Some("texto".to_string()),
+            Token::Leia(_) => Some("leia".to_string()),
+            Token::Comprimento(_) => Some("comprimento".to_string()),
+            Token::Maiuscula(_) => Some("maiuscula".to_string()),
+            Token::Minuscula(_) => Some("minuscula".to_string()),
+            Token::Absoluto(_) => Some("absoluto".to_string()),
+            Token::Potencia(_) => Some("potencia".to_string()),
+            Token::RaizQuadrada(_) => Some("raiz_quadrada".to_string()),
+            _ => None,
+        }
+    }
+
     fn consume_identifier(&mut self, message: &str) -> Result<String, CompilerError> {
-        match self.current_token() {
-            Token::Ident(name, _) => {
-                let name = name.to_string();
-                self.advance();
-                Ok(name)
-            }
-            _ => Err(CompilerError::Parser(message.to_string())),
+        if let Some(name) = self.token_to_identifier_name(&self.current_token()) {
+            self.advance();
+            Ok(name)
+        } else {
+            Err(CompilerError::Parser(message.to_string()))
         }
     }
 

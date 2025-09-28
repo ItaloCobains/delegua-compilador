@@ -1,18 +1,18 @@
-enquanto verdadeiro {
-  escreva("Loop infinito");
+// Test loop functionality
+escreva("Testando loop while:");
+
+var i = 0;
+enquanto (i < 5) {
+    escreva("Contador: ");
+    escreva(i);
+    i = i + 1;
 }
 
-fazer {
-  escreva("Executa pelo menos uma vez");
-} enquanto falso
+escreva("Testando loop for:");
 
-para var i = 0; i < 5; i = i + 1 {
-  escreva(i);
+para (var j = 0; j < 3; j = j + 1) {
+    escreva("For loop: ");
+    escreva(j);
 }
 
-para cada elemento de [1, 2, 3] {
-  escreva(elemento);
-}
-
-sustar;
-continua;
+escreva("Loops completados!");

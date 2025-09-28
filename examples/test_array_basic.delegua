@@ -1,0 +1,12 @@
+// Test basic array creation and access
+var arr = [1, 2, 3, 4, 5];
+var primeiro = arr[0];
+var segundo = arr[1];
+var ultimo = arr[4];
+
+escreva("Primeiro elemento: ");
+escreva(primeiro);
+escreva("Segundo elemento: ");
+escreva(segundo);
+escreva("Ultimo elemento: ");
+escreva(ultimo);

@@ -21,3 +21,4 @@ path = "tests/unit/mod.rs"
 [[test]]
 name = "integration"
 path = "tests/integration/mod.rs"
+

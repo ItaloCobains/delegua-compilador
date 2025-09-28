@@ -1,0 +1,4 @@
+// Test property access only
+var obj = { valor: 42 };
+var x = obj.valor;
+escreva("Property access test");

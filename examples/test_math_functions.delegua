@@ -1,0 +1,34 @@
+// Test math functions
+var num1 = -5;
+var num2 = 25;
+var base = 2;
+var exp = 8;
+
+escreva("Testing math functions:");
+
+// Test absoluto
+var abs_result = absoluto(num1);
+escreva("absoluto(-5) = ");
+escreva(abs_result);
+
+// Test raiz_quadrada
+var sqrt_result = raiz_quadrada(num2);
+escreva("raiz_quadrada(25) = ");
+escreva(sqrt_result);
+
+// Test potencia
+var pow_result = potencia(base, exp);
+escreva("potencia(2, 8) = ");
+escreva(pow_result);
+
+// Test with variables
+var x = 16;
+var y = 4;
+escreva("raiz_quadrada(16) = ");
+escreva(raiz_quadrada(x));
+
+escreva("absoluto(-100) = ");
+escreva(absoluto(-100));
+
+escreva("potencia(3, 3) = ");
+escreva(potencia(3, 3));

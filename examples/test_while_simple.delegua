@@ -1,0 +1,11 @@
+// Test simple while loop
+escreva("Testando loop while:");
+
+var i = 0;
+enquanto (i < 3) {
+    escreva("Contador: ");
+    escreva(i);
+    i = i + 1;
+}
+
+escreva("Loop completado!");

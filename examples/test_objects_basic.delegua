@@ -1,0 +1,22 @@
+// Test basic object functionality
+var pessoa = {
+    nome: "João",
+    idade: 25,
+    ativo: verdadeiro
+};
+
+escreva("Objeto pessoa criado!");
+
+// Test property access (simplified for now)
+var nome_pessoa = pessoa.nome;
+escreva("Nome: ");
+escreva(nome_pessoa);
+
+// Test object with numbers
+var config = {
+    width: 800,
+    height: 600,
+    fullscreen: falso
+};
+
+escreva("Config criado com sucesso!");

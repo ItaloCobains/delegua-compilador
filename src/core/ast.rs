@@ -55,6 +55,28 @@ pub enum Expr {
         params: Vec<String>,
         body: Vec<Statement>,
     },
+
+    /// Array literal (e.g., [1, 2, 3])
+    Array {
+        elements: Vec<Expr>,
+    },
+
+    /// Array indexing (e.g., arr[0])
+    Index {
+        array: Box<Expr>,
+        index: Box<Expr>,
+    },
+
+    /// Object literal (e.g., {nome: "João", idade: 25})
+    Object {
+        properties: Vec<(String, Expr)>,
+    },
+
+    /// Object property access (e.g., obj.nome or obj["nome"])
+    PropertyAccess {
+        object: Box<Expr>,
+        property: String,
+    },
 }
 
 #[derive(Debug, PartialEq, Clone)]
