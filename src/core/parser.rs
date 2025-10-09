@@ -1,24 +1,15 @@
-//! # Parser Module
-//!
-//! The syntactic analyzer (parser) converts a stream of tokens into
-//! an Abstract Syntax Tree (AST). It enforces the language's grammar rules
-//! and provides meaningful error messages for syntax errors.
-
 use crate::core::token::Token;
 use crate::core::ast::{Expr, BinaryOp, Statement, Program};
 use crate::core::error::CompilerError;
 use crate::core::token::Position;
 
-/// High-performance parser for the DC language with better error handling
 pub struct Parser<'a> {
     tokens: Vec<Token<'a>>,
     current: usize,
-    /// Static EOF token to avoid temporary references
     eof_token: Token<'a>,
 }
 
 impl<'a> Parser<'a> {
-    /// Creates a new parser with the given tokens
     pub fn new(tokens: Vec<Token<'a>>) -> Self {
         Parser { 
             tokens, 
@@ -27,17 +18,14 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Helper function to create a token with default position
     fn token_with_pos(token_type: fn(Position) -> Token<'a>) -> Token<'a> {
         token_type(Position { line: 0, column: 0, offset: 0 })
     }
 
-    /// Helper function to create an identifier token with default position
     fn ident_token(s: &'a str) -> Token<'a> {
         Token::Ident(s, Position { line: 0, column: 0, offset: 0 })
     }
 
-    /// Parses the complete program with error recovery
     pub fn parse(&mut self) -> Result<Program, CompilerError> {
         let mut statements = Vec::new();
         let mut errors = Vec::new();
@@ -48,20 +36,16 @@ impl<'a> Parser<'a> {
                 Err(err) => {
                     errors.push(err.clone());
                     if errors.len() > 10 {
-                        // Too many errors, bail out
                         return Err(CompilerError::Parser(
                             format!("Too many parse errors ({}). First error: {}", 
                                    errors.len(), errors[0])
                         ));
                     }
-                    // Error recovery: try to continue parsing
                     self.synchronize();
                 }
             }
         }
 
-        // If we collected any errors but managed to parse some statements,
-        // report the first error
         if !errors.is_empty() {
             return Err(errors.into_iter().next().unwrap());
         }
@@ -69,18 +53,6 @@ impl<'a> Parser<'a> {
         Ok(Program { statements })
     }
 
-    /// Parses a single expression (for REPL use)
-    pub fn parse_expression_only(&mut self) -> Result<Expr, CompilerError> {
-        let expr = self.parse_expression()?;
-        if !self.is_at_end() {
-            return Err(CompilerError::Parser(
-                "Unexpected tokens after expression".to_string()
-            ));
-        }
-        Ok(expr)
-    }
-
-    /// Parses a single statement
     fn parse_statement(&mut self) -> Result<Statement, CompilerError> {
         match self.current_token() {
             Token::Var(_) => self.parse_variable_declaration(),
@@ -96,14 +68,10 @@ impl<'a> Parser<'a> {
             Token::Sustar(_) => self.parse_break_statement(),
             Token::Continua(_) => self.parse_continue_statement(),
             Token::Funcao(_) => {
-                // Check if this is a named function declaration (funcao name(...))
-                // or an anonymous function in expression context
-                self.advance(); // consume funcao
+                self.advance();
                 if let Token::Ident(_, _) = self.current_token() {
-                    // Named function declaration
                     self.parse_named_function_declaration()
                 } else {
-                    // This might be an anonymous function, but in statement context it's an error
                     Err(CompilerError::Parser("Unexpected 'funcao' in statement context".to_string()))
                 }
             }
@@ -117,7 +85,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parses a variable declaration: var name = expression;
     fn parse_variable_declaration(&mut self) -> Result<Statement, CompilerError> {
         self.consume(Self::token_with_pos(Token::Var), "Expected 'var' keyword")?;
 
@@ -129,7 +96,6 @@ impl<'a> Parser<'a> {
         Ok(Statement::VarDeclaration { name, value: initializer })
     }
 
-    /// Parses an assignment, function call, or increment/decrement: ident = expr; or ident(args); or ident++; or ++ident;
     fn parse_assignment_or_call(&mut self) -> Result<Statement, CompilerError> {
         let name = self.consume_identifier("Expected identifier")?;
 
@@ -166,7 +132,6 @@ impl<'a> Parser<'a> {
         }
     }
     
-    /// Parses prefix increment/decrement: ++ident; or --ident;
     fn parse_prefix_increment_decrement(&mut self, is_increment: bool) -> Result<Statement, CompilerError> {
         self.advance(); // consume ++ or --
         
@@ -191,14 +156,12 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parses a function call as a statement
     fn parse_function_call_statement(&mut self) -> Result<Statement, CompilerError> {
         let expr = self.parse_function_call()?;
         self.consume(Self::token_with_pos(Token::Semicolon), "Expected ';' after function call")?;
         Ok(Statement::FunctionCall(expr))
     }
 
-    /// Parses an import statement: importar "module" or importar {item1, item2} from "module"
     fn parse_import_statement(&mut self) -> Result<Statement, CompilerError> {
         self.consume(Self::token_with_pos(Token::Import), "Expected 'importar' keyword")?;
 
@@ -208,7 +171,6 @@ impl<'a> Parser<'a> {
             self.consume(Self::token_with_pos(Token::Semicolon), "Expected ';' after import")?;
             Ok(Statement::Import { module, items: None })
         } else if self.match_token(Self::token_with_pos(Token::LeftBrace)) {
-            // import {items} from "module"
             let mut items = Vec::new();
             while !self.check(Self::token_with_pos(Token::RightBrace)) && !self.is_at_end() {
                 if let Token::Ident(name, _) = self.current_token() {
@@ -239,12 +201,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parses a function call expression
     fn parse_function_call(&mut self) -> Result<Expr, CompilerError> {
         let callee = self.parse_primary()?;
 
-        // If parse_primary already returned a complete function call (for built-ins like escreva),
-        // just return it as-is
         if let Expr::FunctionCall { .. } = callee {
             return Ok(callee);
         }
@@ -258,7 +217,6 @@ impl<'a> Parser<'a> {
         Ok(Expr::FunctionCall { callee: Box::new(callee), args })
     }
 
-    /// Parses function arguments - optimized with pre-allocation
     fn parse_arguments(&mut self) -> Result<Vec<Expr>, CompilerError> {
         if matches!(self.current_token(), Token::RightParen(_)) {
             return Ok(Vec::new());
@@ -279,7 +237,6 @@ impl<'a> Parser<'a> {
         Ok(args)
     }
 
-    /// Parses function parameters - optimized
     fn parse_parameters(&mut self) -> Result<Vec<String>, CompilerError> {
         if matches!(self.current_token(), Token::RightParen(_)) {
             return Ok(Vec::new());
@@ -312,7 +269,6 @@ impl<'a> Parser<'a> {
         Ok(params)
     }
 
-    /// Parses an expression with operator precedence
     fn parse_expression(&mut self) -> Result<Expr, CompilerError> {
         self.parse_logical_or()
     }
@@ -349,7 +305,6 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    /// Parses comparison expressions (<, >, <=, >=, ==, !=) - optimized
     fn parse_comparison(&mut self) -> Result<Expr, CompilerError> {
         let mut left = self.parse_additive()?;
 
@@ -379,7 +334,6 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    /// Parses additive expressions (+, -) - optimized
     fn parse_additive(&mut self) -> Result<Expr, CompilerError> {
         let mut left = self.parse_multiplicative()?;
 
@@ -402,7 +356,6 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    /// Parses multiplicative expressions (*, /, %) - optimized
     fn parse_multiplicative(&mut self) -> Result<Expr, CompilerError> {
         let mut left = self.parse_power()?;
 
@@ -426,7 +379,6 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
     
-    /// Parses power expressions (**) - right associative, highest precedence
     fn parse_power(&mut self) -> Result<Expr, CompilerError> {
         let mut left = self.parse_unary()?;
         
@@ -444,7 +396,6 @@ impl<'a> Parser<'a> {
         Ok(left)
     }
 
-    /// Parses unary expressions (-, +, ++, --) - optimized
     fn parse_unary(&mut self) -> Result<Expr, CompilerError> {
         match self.current_token() {
             Token::Plus(_) => {
@@ -487,7 +438,6 @@ impl<'a> Parser<'a> {
         }
     }
     
-    /// Parses postfix expressions (like x++, x--)
     fn parse_postfix(&mut self) -> Result<Expr, CompilerError> {
         let mut expr = self.parse_primary()?;
         
@@ -537,7 +487,6 @@ impl<'a> Parser<'a> {
         Ok(expr)
     }
 
-    /// Parses primary expressions (literals, identifiers, function calls, parentheses)
     fn parse_primary(&mut self) -> Result<Expr, CompilerError> {
         match *self.current_token() {
             Token::Number(n, _) => {
@@ -567,7 +516,6 @@ impl<'a> Parser<'a> {
                         args,
                     })
                 } else {
-                    // Treat as variable identifier
                     Ok(Expr::Identifier("escreva".to_string()))
                 }
             }
@@ -619,7 +567,6 @@ impl<'a> Parser<'a> {
                         args,
                     })
                 } else {
-                    // Treat as variable identifier
                     Ok(Expr::Identifier("leia".to_string()))
                 }
             }
@@ -633,7 +580,6 @@ impl<'a> Parser<'a> {
                         args,
                     })
                 } else {
-                    // Treat as variable identifier
                     Ok(Expr::Identifier("comprimento".to_string()))
                 }
             }
@@ -647,7 +593,6 @@ impl<'a> Parser<'a> {
                         args,
                     })
                 } else {
-                    // Treat as variable identifier
                     Ok(Expr::Identifier("maiuscula".to_string()))
                 }
             }
@@ -661,7 +606,6 @@ impl<'a> Parser<'a> {
                         args,
                     })
                 } else {
-                    // Treat as variable identifier
                     Ok(Expr::Identifier("minuscula".to_string()))
                 }
             }
@@ -675,7 +619,6 @@ impl<'a> Parser<'a> {
                         args,
                     })
                 } else {
-                    // Treat as variable identifier
                     Ok(Expr::Identifier("absoluto".to_string()))
                 }
             }
@@ -689,7 +632,6 @@ impl<'a> Parser<'a> {
                         args,
                     })
                 } else {
-                    // Treat as variable identifier
                     Ok(Expr::Identifier("potencia".to_string()))
                 }
             }
@@ -703,7 +645,6 @@ impl<'a> Parser<'a> {
                         args,
                     })
                 } else {
-                    // Treat as variable identifier
                     Ok(Expr::Identifier("raiz_quadrada".to_string()))
                 }
             }
@@ -738,7 +679,6 @@ impl<'a> Parser<'a> {
 
                 if !matches!(self.current_token(), Token::RightBrace(_)) {
                     loop {
-                        // Parse key (must be identifier or string)
                         let key = match self.current_token() {
                             Token::Ident(name, _) => {
                                 let key = name.to_string();
@@ -774,7 +714,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    // Helper methods
 
     #[inline]
     fn current_token(&self) -> &Token<'a> {
@@ -816,11 +755,9 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Helper method to extract identifier name from tokens (including built-in function tokens)
     fn token_to_identifier_name(&self, token: &Token) -> Option<String> {
         match token {
             Token::Ident(name, _) => Some(name.to_string()),
-            // Allow built-in function names to be used as identifiers
             Token::Escreva(_) => Some("escreva".to_string()),
             Token::Texto(_) => Some("texto".to_string()),
             Token::Leia(_) => Some("leia".to_string()),
@@ -874,7 +811,6 @@ impl<'a> Parser<'a> {
         matches!(self.current_token(), Token::EOF(_))
     }
 
-    /// Gets current token position for error reporting
     fn current_position(&self) -> Position {
         match self.current_token() {
             Token::Number(_, pos) | Token::String(_, pos) | Token::Ident(_, pos) |
@@ -884,7 +820,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Error recovery: synchronize to next statement boundary
     fn synchronize(&mut self) {
         self.advance();
         
@@ -901,7 +836,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parses an if statement: se condition { statements } [senao se condition { statements }]* [senao { statements }]
     fn parse_if_statement(&mut self) -> Result<Statement, CompilerError> {
         self.consume(Self::token_with_pos(Token::Se), "Expected 'se' keyword")?;
         let condition = self.parse_expression()?;
@@ -911,7 +845,6 @@ impl<'a> Parser<'a> {
         let mut else_if_branches = Vec::new();
         let mut else_branch = None;
 
-        // Check for else-if branches
         while self.match_token(Self::token_with_pos(Token::SenaoSe)) {
             let else_if_condition = self.parse_expression()?;
             self.consume(Self::token_with_pos(Token::LeftBrace), "Expected '{' after else-if condition")?;
@@ -919,7 +852,6 @@ impl<'a> Parser<'a> {
             else_if_branches.push((else_if_condition, else_if_statements));
         }
 
-        // Check for else branch
         if self.match_token(Self::token_with_pos(Token::Senao)) {
             self.consume(Self::token_with_pos(Token::LeftBrace), "Expected '{' after 'senao'")?;
             else_branch = Some(self.parse_block()?);
@@ -941,7 +873,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Parses a switch statement: escolha value { caso value: statements* [padrao: statements] }
     fn parse_switch_statement(&mut self) -> Result<Statement, CompilerError> {
         self.consume(Self::token_with_pos(Token::Escolha), "Expected 'escolha' keyword")?;
         let value = self.parse_expression()?;
@@ -956,7 +887,6 @@ impl<'a> Parser<'a> {
                 self.consume(Self::token_with_pos(Token::Colon), "Expected ':' after case value")?;
                 let mut case_statements = Vec::new();
 
-                // Parse multiple statements until next case, default, or end of switch
                 while !self.check(Self::token_with_pos(Token::Caso)) && !self.check(Self::token_with_pos(Token::Padrao)) && !self.check(Self::token_with_pos(Token::RightBrace)) && !self.is_at_end() {
                     case_statements.push(self.parse_statement()?);
                 }
@@ -985,7 +915,6 @@ impl<'a> Parser<'a> {
         })
     }
 
-    /// Parses a while statement: enquanto condition { statements }
     fn parse_while_statement(&mut self) -> Result<Statement, CompilerError> {
         self.consume(Self::token_with_pos(Token::Enquanto), "Expected 'enquanto' keyword")?;
         let condition = self.parse_expression()?;
@@ -995,7 +924,6 @@ impl<'a> Parser<'a> {
         Ok(Statement::While { condition, body })
     }
 
-    /// Parses a do-while statement: fazer { statements } enquanto condition
     fn parse_do_while_statement(&mut self) -> Result<Statement, CompilerError> {
         self.consume(Self::token_with_pos(Token::Fazer), "Expected 'fazer' keyword")?;
         self.consume(Self::token_with_pos(Token::LeftBrace), "Expected '{' after 'fazer'")?;
@@ -1006,7 +934,6 @@ impl<'a> Parser<'a> {
         Ok(Statement::DoWhile { body, condition })
     }
 
-    /// Parses a for statement: para [initializer]; [condition]; [increment] { statements }
     fn parse_for_statement(&mut self) -> Result<Statement, CompilerError> {
         self.consume(Self::token_with_pos(Token::Para), "Expected 'para' keyword")?;
         self.consume(Self::token_with_pos(Token::LeftParen), "Expected '(' after 'para'")?;
@@ -1029,7 +956,6 @@ impl<'a> Parser<'a> {
             None
         };
         
-        // Optional semicolon after condition
         if self.check(Self::token_with_pos(Token::Semicolon)) {
             self.advance();
         }
@@ -1040,7 +966,6 @@ impl<'a> Parser<'a> {
             None
         };
         
-        // Optional semicolon after increment
         if self.check(Self::token_with_pos(Token::Semicolon)) {
             self.advance();
         }
@@ -1052,7 +977,6 @@ impl<'a> Parser<'a> {
         Ok(Statement::For { initializer, condition, increment, body })
     }
 
-    /// Parses a for-each statement: para cada variable in iterable { statements }
     fn parse_for_each_statement(&mut self) -> Result<Statement, CompilerError> {
         self.consume(Self::token_with_pos(Token::ParaCada), "Expected 'para cada' keyword")?;
         let variable = self.consume_identifier("Expected variable name")?;
@@ -1064,19 +988,16 @@ impl<'a> Parser<'a> {
         Ok(Statement::ForEach { variable, iterable, body })
     }
 
-    /// Parses a break statement: sustar
     fn parse_break_statement(&mut self) -> Result<Statement, CompilerError> {
         self.consume(Self::token_with_pos(Token::Sustar), "Expected 'sustar' keyword")?;
         Ok(Statement::Break)
     }
 
-    /// Parses a continue statement: continua
     fn parse_continue_statement(&mut self) -> Result<Statement, CompilerError> {
         self.consume(Self::token_with_pos(Token::Continua), "Expected 'continua' keyword")?;
         Ok(Statement::Continue)
     }
 
-    /// Parses a block of statements enclosed in braces
     fn parse_block(&mut self) -> Result<Vec<Statement>, CompilerError> {
         let mut statements = Vec::new();
 
@@ -1088,9 +1009,7 @@ impl<'a> Parser<'a> {
         Ok(statements)
     }
 
-    /// Parses a named function declaration: funcao name(params) { body }
     fn parse_named_function_declaration(&mut self) -> Result<Statement, CompilerError> {
-        // At this point, 'funcao' has already been consumed
         let name = self.consume_identifier("Expected function name")?;
         self.consume(Self::token_with_pos(Token::LeftParen), "Expected '(' after function name")?;
 
@@ -1115,7 +1034,6 @@ impl<'a> Parser<'a> {
         Ok(Statement::FunctionDeclaration { name: Some(name), params, body })
     }
 
-    /// Parses a return statement: retorna [expression];
     fn parse_return_statement(&mut self) -> Result<Statement, CompilerError> {
         self.consume(Self::token_with_pos(Token::Retorna), "Expected 'retorna' keyword")?;
 
@@ -1152,37 +1070,6 @@ mod tests {
             }
             _ => panic!("Expected variable declaration"),
         }
-    }
-
-    #[test]
-    fn test_parse_arithmetic_expression() {
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("2 + 3 * 4");
-        let mut parser = Parser::new(tokens);
-
-        let expr = parser.parse_expression_only().unwrap();
-        assert_eq!(expr, Expr::Binary {
-            left: Box::new(Expr::Number(2)),
-            operator: BinaryOp::Add,
-            right: Box::new(Expr::Binary {
-                left: Box::new(Expr::Number(3)),
-                operator: BinaryOp::Multiply,
-                right: Box::new(Expr::Number(4)),
-            }),
-        });
-    }
-
-    #[test]
-    fn test_parse_function_call() {
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("escreva(\"Hello\")");
-        let mut parser = Parser::new(tokens);
-
-        let expr = parser.parse_expression_only().unwrap();
-        assert_eq!(expr, Expr::FunctionCall {
-            callee: Box::new(Expr::Identifier("escreva".to_string())),
-            args: vec![Expr::String("Hello".to_string())],
-        });
     }
 
     #[test]

@@ -1,9 +1,3 @@
-//! # Compiler Module
-//!
-//! Handles file compilation from DC source code to executable binaries.
-//! Manages the complete compilation pipeline including LLVM IR generation,
-//! assembly code generation, and linking.
-
 use std::fs;
 use std::process::Command;
 use inkwell::context::Context;
@@ -13,37 +7,30 @@ use crate::core::parser::Parser;
 use crate::core::codegen::CodeGen;
 use crate::core::error::CompilerError;
 
-/// Compiles a DC source file to an executable
 pub fn compile_file(filename: &str) -> Result<(), CompilerError> {
     println!("Compilando {}...", filename);
 
-    // Read source file
     let source_code = fs::read_to_string(filename)
         .map_err(|e| CompilerError::Io(e.to_string()))?;
 
-    // Parse source code
     let mut lexer = Lexer::new();
     let tokens = lexer.tokenize(&source_code);
     let mut parser = Parser::new(tokens);
     let ast = parser.parse()?;
 
-    // Generate LLVM IR
     let context = Context::create();
     let mut codegen = CodeGen::new(&context, "program")?;
     codegen.generate(&ast)?;
 
-    // Save LLVM IR
     let ir_filename = format!("{}.ll", filename.trim_end_matches(".delegua"));
     fs::write(&ir_filename, codegen.get_ir())
         .map_err(|e| CompilerError::Io(e.to_string()))?;
     println!("✓ LLVM IR gerado: {}", ir_filename);
 
-    // Generate assembly code
     let asm_filename = format!("{}.s", filename.trim_end_matches(".delegua"));
     run_command("llc", &["-o", &asm_filename, &ir_filename])?;
     println!("✓ Código assembly gerado: {}", asm_filename);
 
-    // Compile and link to binary
     let binary_filename = filename.trim_end_matches(".delegua");
     run_command("clang", &[&asm_filename, "-o", binary_filename])?;
     println!("✓ Binário executável gerado: {}", binary_filename);
@@ -54,7 +41,6 @@ pub fn compile_file(filename: &str) -> Result<(), CompilerError> {
     Ok(())
 }
 
-/// Runs a shell command and returns the result
 fn run_command(command: &str, args: &[&str]) -> Result<(), CompilerError> {
     let output = Command::new(command)
         .args(args)
@@ -87,8 +73,6 @@ mod tests {
         let test_filename = "test_compile.dc";
         fs::write(test_filename, test_code).unwrap();
 
-        // This test would require LLVM tools to be installed
-        // For now, we'll just test the parsing part
         let mut lexer = Lexer::new();
         let tokens = lexer.tokenize(test_code);
         let mut parser = Parser::new(tokens);
@@ -96,7 +80,6 @@ mod tests {
 
         assert_eq!(ast.statements.len(), 4);
 
-        // Clean up
         let _ = fs::remove_file(test_filename);
     }
 }

@@ -1,8 +1,3 @@
-//! # Integration Tests
-//!
-//! End-to-end integration tests that verify the complete functionality
-//! of the DC language compiler, from source code to executable output.
-
 #[cfg(test)]
 mod integration_tests {
     use inkwell::context::Context;
@@ -24,7 +19,6 @@ mod integration_tests {
             escreva("Product: " + texto(product));
         "#;
 
-        // Full pipeline test
         let mut lexer = Lexer::new();
         let tokens = lexer.tokenize(program);
         let mut parser = Parser::new(tokens);
@@ -33,7 +27,6 @@ mod integration_tests {
         codegen.generate(&ast).unwrap();
         let ir = codegen.get_ir();
 
-        // Verify IR contains expected elements
         assert!(ir.contains("main"));
         assert!(ir.contains("printf"));
         assert!(ir.contains("add"));
@@ -147,7 +140,6 @@ mod integration_tests {
     fn test_error_handling() {
         let mut lexer = Lexer::new();
 
-        // Test invalid syntax
         let invalid_code = "var x = ;";
         let tokens = lexer.tokenize(invalid_code);
         let mut parser = Parser::new(tokens);
@@ -169,7 +161,6 @@ mod integration_tests {
         codegen.generate(&ast).unwrap();
         let ir = codegen.get_ir();
 
-        // Should still generate a valid main function
         assert!(ir.contains("main"));
         assert!(ir.contains("ret"));
     }
@@ -215,7 +206,6 @@ mod integration_tests {
         codegen.generate(&ast).unwrap();
         let ir = codegen.get_ir();
 
-        // Should contain multiple printf calls
         let printf_count = ir.matches("printf").count();
         assert!(printf_count >= 3);
     }

@@ -1,7 +1,3 @@
-//! Biblioteca de matemática para Delegua
-//!
-//! Fornece funções matemáticas que podem ser importadas e usadas em código Delegua.
-
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::builder::Builder;
@@ -9,7 +5,6 @@ use inkwell::values::FunctionValue;
 use inkwell::types::IntType;
 use std::collections::HashMap;
 
-/// Módulo de funções matemáticas
 pub struct Matematica<'ctx> {
     context: &'ctx Context,
     builder: Builder<'ctx>,
@@ -17,7 +12,6 @@ pub struct Matematica<'ctx> {
 }
 
 impl<'ctx> Matematica<'ctx> {
-    /// Cria um novo módulo de matemática
     pub fn new(context: &'ctx Context) -> Self {
         let builder = context.create_builder();
         let i64_type = context.i64_type();
@@ -29,21 +23,17 @@ impl<'ctx> Matematica<'ctx> {
         }
     }
 
-    /// Declara todas as funções matemáticas no módulo fornecido
     pub fn declarar_funcoes(&self, module: &Module<'ctx>) -> HashMap<String, FunctionValue<'ctx>> {
         let mut funcoes = HashMap::new();
 
-        // absoluto function: i64 -> i64
         let tipo_absoluto = self.i64_type.fn_type(&[self.i64_type.into()], false);
         let func_absoluto = module.add_function("matematica_absoluto", tipo_absoluto, None);
         funcoes.insert("absoluto".to_string(), func_absoluto);
 
-        // potencia function: i64, i64 -> i64 (base^expoente)
         let tipo_potencia = self.i64_type.fn_type(&[self.i64_type.into(), self.i64_type.into()], false);
         let func_potencia = module.add_function("matematica_potencia", tipo_potencia, None);
         funcoes.insert("potencia".to_string(), func_potencia);
 
-        // raiz_quadrada function: i64 -> i64 (raiz quadrada inteira)
         let tipo_raiz = self.i64_type.fn_type(&[self.i64_type.into()], false);
         let func_raiz = module.add_function("matematica_raiz_quadrada", tipo_raiz, None);
         funcoes.insert("raiz_quadrada".to_string(), func_raiz);
@@ -51,14 +41,12 @@ impl<'ctx> Matematica<'ctx> {
         funcoes
     }
 
-    /// Gera implementações para todas as funções matemáticas
     pub fn gerar_implementacoes(&self, module: &Module<'ctx>) {
         self.gerar_absoluto(module);
         self.gerar_potencia(module);
         self.gerar_raiz_quadrada(module);
     }
 
-    /// Gera função absoluto
     fn gerar_absoluto(&self, module: &Module<'ctx>) {
         let func_absoluto = module.get_function("matematica_absoluto").unwrap();
         let bloco_entrada = self.context.append_basic_block(func_absoluto, "entry");
@@ -80,7 +68,6 @@ impl<'ctx> Matematica<'ctx> {
         self.builder.build_return(Some(&resultado)).unwrap();
     }
 
-    /// Gera função potência (implementação simples para expoentes pequenos)
     fn gerar_potencia(&self, module: &Module<'ctx>) {
         let func_potencia = module.get_function("matematica_potencia").unwrap();
         let bloco_entrada = self.context.append_basic_block(func_potencia, "entry");
@@ -115,7 +102,6 @@ impl<'ctx> Matematica<'ctx> {
 
         self.builder.build_conditional_branch(condicao, bloco_corpo, bloco_apos).unwrap();
 
-        // Corpo do laço
         self.builder.position_at_end(bloco_corpo);
         let resultado = self.builder.build_load(self.i64_type, resultado_ptr, "valor_resultado").unwrap().into_int_value();
         let novo_resultado = self.builder.build_int_mul(resultado, base, "novo_resultado").unwrap();
@@ -131,7 +117,6 @@ impl<'ctx> Matematica<'ctx> {
         self.builder.build_return(Some(&resultado_final)).unwrap();
     }
 
-    /// Gera função raiz quadrada (raiz quadrada inteira usando busca binária)
     fn gerar_raiz_quadrada(&self, module: &Module<'ctx>) {
         let func_raiz = module.get_function("matematica_raiz_quadrada").unwrap();
         let bloco_entrada = self.context.append_basic_block(func_raiz, "entry");
@@ -139,11 +124,9 @@ impl<'ctx> Matematica<'ctx> {
 
         let x = func_raiz.get_nth_param(0).unwrap().into_int_value();
 
-        // Casos especiais
         let zero = self.i64_type.const_int(0, false);
         let um = self.i64_type.const_int(1, false);
 
-        // Se x == 0 ou x == 1, retorna x
         let eh_zero_ou_um = self.builder.build_or(
             self.builder.build_int_compare(inkwell::IntPredicate::EQ, x, zero, "eh_zero").unwrap(),
             self.builder.build_int_compare(inkwell::IntPredicate::EQ, x, um, "eh_um").unwrap(),
@@ -156,11 +139,9 @@ impl<'ctx> Matematica<'ctx> {
 
         self.builder.build_conditional_branch(eh_zero_ou_um, bloco_caso_especial, bloco_caso_normal).unwrap();
 
-        // Caso especial: retorna x
         self.builder.position_at_end(bloco_caso_especial);
         self.builder.build_return(Some(&x)).unwrap();
 
-        // Caso normal: busca binária
         self.builder.position_at_end(bloco_caso_normal);
         let baixo_ptr = self.builder.build_alloca(self.i64_type, "baixo").unwrap();
         let alto_ptr = self.builder.build_alloca(self.i64_type, "alto").unwrap();
@@ -176,7 +157,6 @@ impl<'ctx> Matematica<'ctx> {
 
         self.builder.build_unconditional_branch(bloco_laco).unwrap();
 
-        // Cabeçalho do laço
         self.builder.position_at_end(bloco_laco);
         let baixo = self.builder.build_load(self.i64_type, baixo_ptr, "valor_baixo").unwrap().into_int_value();
         let alto = self.builder.build_load(self.i64_type, alto_ptr, "valor_alto").unwrap().into_int_value();
@@ -190,14 +170,12 @@ impl<'ctx> Matematica<'ctx> {
 
         self.builder.build_conditional_branch(condicao, bloco_corpo_laco, bloco_apos_laco).unwrap();
 
-        // Corpo do laço
         self.builder.position_at_end(bloco_corpo_laco);
         let meio = self.builder.build_int_add(baixo, alto, "soma_meio").unwrap();
         let meio = self.builder.build_int_signed_div(meio, self.i64_type.const_int(2, false), "meio").unwrap();
 
         let meio_quadrado = self.builder.build_int_mul(meio, meio, "meio_quadrado").unwrap();
         
-        // Verificar se é raiz exata
         let eh_exata = self.builder.build_int_compare(
             inkwell::IntPredicate::EQ,
             meio_quadrado,
@@ -208,7 +186,6 @@ impl<'ctx> Matematica<'ctx> {
         let bloco_continuar = self.context.append_basic_block(func_raiz, "continuar");
         self.builder.build_conditional_branch(eh_exata, bloco_retornar_meio, bloco_continuar).unwrap();
         
-        // Se não é exata, continuar busca
         self.builder.position_at_end(bloco_continuar);
         let comparacao = self.builder.build_int_compare(
             inkwell::IntPredicate::SGT,
@@ -217,10 +194,8 @@ impl<'ctx> Matematica<'ctx> {
             "comparacao"
         ).unwrap();
 
-        // Se meio*meio > x, busca na metade inferior (novo_alto = meio - 1)
         let meio_menos_um = self.builder.build_int_sub(meio, um, "meio_menos_um").unwrap();
         let novo_alto = self.builder.build_select(comparacao, meio_menos_um, alto, "novo_alto").unwrap();
-        // Se meio*meio < x, busca na metade superior
         let novo_baixo = self.builder.build_select(comparacao, baixo, self.builder.build_int_add(meio, um, "meio_mais_um").unwrap(), "novo_baixo").unwrap();
 
         self.builder.build_store(alto_ptr, novo_alto).unwrap();
@@ -229,16 +204,13 @@ impl<'ctx> Matematica<'ctx> {
 
         self.builder.build_unconditional_branch(bloco_laco).unwrap();
 
-        // Bloco para retornar quando encontra raiz exata
         self.builder.position_at_end(bloco_retornar_meio);
         self.builder.build_return(Some(&meio)).unwrap();
 
-        // Após o laço, retornar o menor valor possível
         self.builder.position_at_end(bloco_apos_laco);
         let resultado_final = self.builder.build_load(self.i64_type, resultado_ptr, "resultado_final").unwrap();
         self.builder.build_return(Some(&resultado_final)).unwrap();
 
-        // Bloco fim (inacessível)
         self.builder.position_at_end(bloco_fim);
         self.builder.build_unreachable().unwrap();
     }

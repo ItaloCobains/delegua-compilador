@@ -1,18 +1,5 @@
-//! # Lexer Module
-//!
-//! The lexical analyzer (lexer) converts source code into a stream of tokens.
-//! It handles whitespace, comments, and identifies language keywords and symbols.
-//!
-//! Optimized for performance with:
-//! - Zero-copy string handling using string slices
-//! - Pre-allocated token buffers
-//! - Keyword lookup tables
-//! - Memory pooling for common tokens
-//! - Position tracking
-
 use crate::core::token::{Token, Position};
 
-/// Memory pool for common token types to reduce allocations
 #[derive(Default)]
 struct TokenPool {
     positions: Vec<Position>,
@@ -48,7 +35,6 @@ impl TokenPool {
     }
 }
 
-/// Optimized lexical analyzer for the DC language
 pub struct Lexer<'a> {
     input: &'a str,
     chars: std::iter::Peekable<std::str::Chars<'a>>,
@@ -57,7 +43,6 @@ pub struct Lexer<'a> {
 }
 
 impl<'a> Lexer<'a> {
-    /// Creates a new lexer instance with optimized memory allocation
     pub fn new() -> Self {
         Self {
             input: "",
@@ -67,7 +52,6 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Tokenizes the input source code into a vector of tokens with zero-copy optimization
     pub fn tokenize(&mut self, input: &'a str) -> Vec<Token<'a>> {
         self.input = input;
         self.chars = input.chars().peekable();
@@ -78,7 +62,6 @@ impl<'a> Lexer<'a> {
 
         while let Some(&ch) = self.chars.peek() {
             match ch {
-                // Skip whitespace
                 ' ' | '\t' | '\r' => {
                     self.advance();
                 }
@@ -88,7 +71,6 @@ impl<'a> Lexer<'a> {
                     self.advance();
                 }
 
-                // Single-line comments
                 '/' => {
                     self.advance();
                     if let Some('/') = self.chars.peek() {
@@ -99,7 +81,6 @@ impl<'a> Lexer<'a> {
                     }
                 }
 
-                // Operators and punctuation
                 '+' => {
                     self.advance();
                     if let Some('+') = self.chars.peek() {
@@ -174,40 +155,32 @@ impl<'a> Lexer<'a> {
                 ',' => { self.advance(); tokens.push(Token::Comma(self.get_position())); }
                 ':' => { self.advance(); tokens.push(Token::Colon(self.get_position())); }
                 '.' => {
-                    // Check if it's a decimal number or property access
                     if let Some(next_ch) = self.chars.clone().nth(1) {
                         if next_ch.is_ascii_digit() {
-                            // This is part of a decimal number, let it be handled by number parsing
                             let ch = self.chars.next().unwrap();
                             self.position.column += 1;
                             self.position.offset += ch.len_utf8();
                             tokens.push(Token::Error(ch, self.get_position()));
                         } else {
-                            // This is property access
                             self.advance();
                             tokens.push(Token::Dot(self.get_position()));
                         }
                     } else {
-                        // End of input, treat as property access
                         self.advance();
                         tokens.push(Token::Dot(self.get_position()));
                     }
                 }
 
-                // String literals
                 '"' => {
                     if let Some(token) = self.lex_string() {
                         tokens.push(token);
                     }
                 }
 
-                // Numbers
                 '0'..='9' => tokens.push(self.lex_number()),
 
-                // Identifiers and keywords
                 'a'..='z' | 'A'..='Z' | '_' => tokens.push(self.lex_identifier_or_keyword()),
 
-                // Unknown characters
                 _ => {
                     let ch = self.chars.next().unwrap();
                     self.position.column += 1;
@@ -221,7 +194,6 @@ impl<'a> Lexer<'a> {
         tokens
     }
 
-    /// Advances to the next character and updates position
     fn advance(&mut self) {
         if let Some(ch) = self.chars.next() {
             self.position.column += 1;
@@ -229,12 +201,10 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Gets current position from pool
     fn get_position(&mut self) -> Position {
         self.token_pool.get_position(self.position.line, self.position.column, self.position.offset)
     }
 
-    /// Lexes a number literal with position tracking
     fn lex_number(&mut self) -> Token<'a> {
         let start_pos = self.get_position();
         let start_offset = self.position.offset;
@@ -252,7 +222,6 @@ impl<'a> Lexer<'a> {
         Token::Number(value, start_pos)
     }
 
-    /// Lexes a string literal with zero-copy optimization
     fn lex_string(&mut self) -> Option<Token<'a>> {
         let start_pos = self.get_position();
         self.advance(); // Skip opening quote
@@ -266,17 +235,14 @@ impl<'a> Lexer<'a> {
                 return Some(Token::String(string_slice, start_pos));
             }
             if ch == '\n' {
-                // Unterminated string
                 return Some(Token::Error('"', start_pos));
             }
             self.advance();
         }
 
-        // Unterminated string at EOF
         Some(Token::Error('"', start_pos))
     }
 
-    /// Lexes an identifier or keyword with optimized keyword matching
     fn lex_identifier_or_keyword(&mut self) -> Token<'a> {
         let start_pos = self.get_position();
         let start_offset = self.position.offset;
@@ -291,7 +257,6 @@ impl<'a> Lexer<'a> {
 
         let ident_slice = &self.input[start_offset..self.position.offset];
 
-        // Optimized keyword matching using direct comparison
         match ident_slice {
             "var" => Token::Var(start_pos),
             "escreva" => Token::Escreva(start_pos),
@@ -317,19 +282,17 @@ impl<'a> Lexer<'a> {
             "verdadeiro" => Token::Verdadeiro(start_pos),
             "falso" => Token::Falso(start_pos),
             "funcao" => Token::Funcao(start_pos),
-            "função" => Token::Funcao(start_pos),  // Portuguese spelling with accent
+            "função" => Token::Funcao(start_pos), 
             "retorna" => Token::Retorna(start_pos),
             "e" => Token::E(start_pos),
             "ou" => Token::Ou(start_pos),
             "não" => Token::Nao(start_pos),
-            "nao" => Token::Nao(start_pos),  // Alternative spelling without accent
+            "nao" => Token::Nao(start_pos),
             _ => Token::Ident(ident_slice, start_pos),
         }
     }
 
-    /// Handles "senao se" compound keyword
     fn handle_senao_se(&mut self, start_pos: Position) -> Token<'a> {
-        // Skip whitespace
         while let Some(&ch) = self.chars.peek() {
             if ch.is_whitespace() {
                 self.advance();
@@ -338,7 +301,6 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // Check if next word is "se"
         let mut temp_chars = self.chars.clone();
         let mut next_word = String::new();
         while let Some(&ch) = temp_chars.peek() {
@@ -351,7 +313,6 @@ impl<'a> Lexer<'a> {
         }
 
         if next_word == "se" {
-            // Consume the "se" part
             for _ in 0.."se".len() {
                 self.advance();
             }
@@ -361,9 +322,7 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Handles "para cada" compound keyword
     fn handle_para_cada(&mut self, start_pos: Position) -> Token<'a> {
-        // Skip whitespace
         while let Some(&ch) = self.chars.peek() {
             if ch.is_whitespace() {
                 self.advance();
@@ -372,7 +331,6 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        // Check if next word is "cada"
         let mut temp_chars = self.chars.clone();
         let mut next_word = String::new();
         while let Some(&ch) = temp_chars.peek() {
@@ -385,7 +343,6 @@ impl<'a> Lexer<'a> {
         }
 
         if next_word == "cada" {
-            // Consume the "cada" part
             for _ in 0.."cada".len() {
                 self.advance();
             }
@@ -395,7 +352,6 @@ impl<'a> Lexer<'a> {
         }
     }
 
-    /// Skips a single-line comment
     fn skip_comment(&mut self) {
         while let Some(&ch) = self.chars.peek() {
             if ch == '\n' {

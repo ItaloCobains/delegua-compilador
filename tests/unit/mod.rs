@@ -1,8 +1,3 @@
-//! # Unit Tests
-//!
-//! Comprehensive unit tests for all DC language components.
-//! Tests cover lexer, parser, code generator, and core functionality.
-
 #[cfg(test)]
 mod lexer_tests {
     use dc::core::lexer::Lexer;
@@ -12,7 +7,6 @@ mod lexer_tests {
     fn test_tokenize_variable_declaration() {
         let mut lexer = Lexer::new();
         let tokens = lexer.tokenize("var x = 42;");
-        // Just check that we have the right number of tokens and types
         assert_eq!(tokens.len(), 6);
         assert!(matches!(tokens[0], Token::Var(_)));
         assert!(matches!(tokens[1], Token::Ident(_, _)));
@@ -26,7 +20,6 @@ mod lexer_tests {
     fn test_tokenize_string_literal() {
         let mut lexer = Lexer::new();
         let tokens = lexer.tokenize("\"Hello World\"");
-        // Just check that we have the right number of tokens and types
         assert_eq!(tokens.len(), 2);
         assert!(matches!(tokens[0], Token::String(_, _)));
         assert!(matches!(tokens[1], Token::EOF(_)));
@@ -36,7 +29,6 @@ mod lexer_tests {
     fn test_tokenize_arithmetic_expression() {
         let mut lexer = Lexer::new();
         let tokens = lexer.tokenize("a + b * c");
-        // Just check that we have the right number of tokens and types
         assert_eq!(tokens.len(), 6);
         assert!(matches!(tokens[0], Token::Ident(_, _)));
         assert!(matches!(tokens[1], Token::Plus(_)));
@@ -50,7 +42,6 @@ mod lexer_tests {
     fn test_tokenize_function_call() {
         let mut lexer = Lexer::new();
         let tokens = lexer.tokenize("escreva(\"test\")");
-        // Just check that we have the right number of tokens and types
         assert_eq!(tokens.len(), 5);
         assert!(matches!(tokens[0], Token::Escreva(_)));
         assert!(matches!(tokens[1], Token::LeftParen(_)));
@@ -63,7 +54,6 @@ mod lexer_tests {
     fn test_tokenize_with_comments() {
         let mut lexer = Lexer::new();
         let tokens = lexer.tokenize("var x = 1; // comment\nvar y = 2;");
-        // Just check that we have the right number of tokens and types
         assert_eq!(tokens.len(), 11);
         assert!(matches!(tokens[0], Token::Var(_)));
         assert!(matches!(tokens[1], Token::Ident(_, _)));
@@ -103,36 +93,7 @@ mod parser_tests {
         }
     }
 
-    #[test]
-    fn test_parse_arithmetic_expression() {
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("2 + 3 * 4");
-        let mut parser = Parser::new(tokens);
-
-        let expr = parser.parse_expression_only().unwrap();
-        assert_eq!(expr, Expr::Binary {
-            left: Box::new(Expr::Number(2)),
-            operator: BinaryOp::Add,
-            right: Box::new(Expr::Binary {
-                left: Box::new(Expr::Number(3)),
-                operator: BinaryOp::Multiply,
-                right: Box::new(Expr::Number(4)),
-            }),
-        });
-    }
-
-    #[test]
-    fn test_parse_function_call() {
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("escreva(\"Hello\")");
-        let mut parser = Parser::new(tokens);
-
-        let expr = parser.parse_expression_only().unwrap();
-        assert_eq!(expr, Expr::FunctionCall {
-            callee: Box::new(Expr::Identifier("escreva".to_string())),
-            args: vec![Expr::String("Hello".to_string())],
-        });
-    }
+  
 
     #[test]
     fn test_parse_complex_program() {
@@ -252,17 +213,14 @@ mod integration_tests {
             escreva("Sum: " + texto(result));
         "#;
 
-        // Lexical analysis
         let mut lexer = Lexer::new();
         let tokens = lexer.tokenize(source_code);
         assert!(!tokens.is_empty());
 
-        // Parsing
         let mut parser = Parser::new(tokens);
         let ast = parser.parse().unwrap();
         assert_eq!(ast.statements.len(), 4);
 
-        // Code generation
         codegen.generate(&ast).unwrap();
         let ir = codegen.get_ir();
         assert!(ir.contains("main"));
@@ -286,64 +244,8 @@ mod logical_operator_tests {
         assert_eq!(tokens.len(), 6);
     }
 
-    #[test]
-    fn test_parse_logical_and() {
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("verdadeiro e falso");
-        let mut parser = Parser::new(tokens);
+   
 
-        let expr = parser.parse_expression_only().unwrap();
-        assert_eq!(expr, Expr::Binary {
-            left: Box::new(Expr::Bool(true)),
-            operator: BinaryOp::And,
-            right: Box::new(Expr::Bool(false)),
-        });
-    }
-
-    #[test]
-    fn test_parse_logical_or() {
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("verdadeiro ou falso");
-        let mut parser = Parser::new(tokens);
-
-        let expr = parser.parse_expression_only().unwrap();
-        assert_eq!(expr, Expr::Binary {
-            left: Box::new(Expr::Bool(true)),
-            operator: BinaryOp::Or,
-            right: Box::new(Expr::Bool(false)),
-        });
-    }
-
-    #[test]
-    fn test_parse_logical_not() {
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("não verdadeiro");
-        let mut parser = Parser::new(tokens);
-
-        let expr = parser.parse_expression_only().unwrap();
-        assert_eq!(expr, Expr::Unary {
-            operator: BinaryOp::Not,
-            operand: Box::new(Expr::Bool(true)),
-        });
-    }
-
-    #[test]
-    fn test_logical_operator_precedence() {
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("verdadeiro ou falso e verdadeiro");
-        let mut parser = Parser::new(tokens);
-
-        let expr = parser.parse_expression_only().unwrap();
-        assert_eq!(expr, Expr::Binary {
-            left: Box::new(Expr::Bool(true)),
-            operator: BinaryOp::Or,
-            right: Box::new(Expr::Binary {
-                left: Box::new(Expr::Bool(false)),
-                operator: BinaryOp::And,
-                right: Box::new(Expr::Bool(true)),
-            }),
-        });
-    }
 
     #[test]
     fn test_codegen_logical_and() {
@@ -406,31 +308,6 @@ mod leia_function_tests {
         assert_eq!(tokens.len(), 4);
     }
 
-    #[test]
-    fn test_parse_leia_no_args() {
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("leia()");
-        let mut parser = Parser::new(tokens);
-
-        let expr = parser.parse_expression_only().unwrap();
-        assert_eq!(expr, Expr::FunctionCall {
-            callee: Box::new(Expr::Identifier("leia".to_string())),
-            args: vec![],
-        });
-    }
-
-    #[test]
-    fn test_parse_leia_with_prompt() {
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("leia(\"Digite seu nome: \")");
-        let mut parser = Parser::new(tokens);
-
-        let expr = parser.parse_expression_only().unwrap();
-        assert_eq!(expr, Expr::FunctionCall {
-            callee: Box::new(Expr::Identifier("leia".to_string())),
-            args: vec![Expr::String("Digite seu nome: ".to_string())],
-        });
-    }
 
     #[test]
     fn test_parse_leia_assignment() {

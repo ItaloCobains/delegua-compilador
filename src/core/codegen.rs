@@ -77,7 +77,6 @@ impl<'ctx> CodeGen<'ctx> {
             i8_ptr_type,
         };
 
-        // Initialize math functions as built-ins
         let math_module = Matematica::new(context);
         math_module.declarar_funcoes(&codegen.module);
         math_module.gerar_implementacoes(&codegen.module);
@@ -659,10 +658,8 @@ impl<'ctx> CodeGen<'ctx> {
 
         let string_arg = self.generate_expression(&args[0])?;
 
-        // Get the strlen built-in function
         let strlen_fn = self.get_built_in_function("strlen")?;
 
-        // Call strlen on the string argument
         let length_call = self.safe_build(
             self.builder.build_call(strlen_fn, &[string_arg.into()], "strlen_call"),
             "call strlen function"
@@ -683,12 +680,10 @@ impl<'ctx> CodeGen<'ctx> {
 
         let string_arg = self.generate_expression(&args[0])?;
 
-        // Get built-in functions
         let malloc_fn = self.get_built_in_function("malloc")?;
         let strlen_fn = self.get_built_in_function("strlen")?;
         let strcpy_fn = self.get_built_in_function("strcpy")?;
 
-        // Get string length
         let length_call = self.safe_build(
             self.builder.build_call(strlen_fn, &[string_arg.into()], "strlen_call"),
             "call strlen for maiuscula"
@@ -697,7 +692,6 @@ impl<'ctx> CodeGen<'ctx> {
             .ok_or_else(|| CompilerError::CodeGen("Failed to get length".to_string()))?
             .into_int_value();
 
-        // Allocate new buffer (length + 1 for null terminator)
         let one = self.i64_type.const_int(1, false);
         let buffer_size = self.safe_build(
             self.builder.build_int_add(length, one, "buffer_size"),
@@ -712,20 +706,16 @@ impl<'ctx> CodeGen<'ctx> {
             .ok_or_else(|| CompilerError::CodeGen("Failed to allocate buffer".to_string()))?
             .into_pointer_value();
 
-        // Copy original string to buffer
         self.safe_build(
             self.builder.build_call(strcpy_fn, &[buffer.into(), string_arg.into()], "strcpy_call"),
             "copy string to buffer"
         )?;
 
-        // Convert to uppercase by iterating through characters
-        // Simple implementation: for ASCII characters, convert a-z to A-Z
         let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
         let loop_bb = self.context.append_basic_block(current_function, "upper_loop");
         let loop_body_bb = self.context.append_basic_block(current_function, "upper_body");
         let after_loop_bb = self.context.append_basic_block(current_function, "upper_done");
 
-        // Initialize loop counter
         let counter = self.safe_build(
             self.builder.build_alloca(self.i64_type, "upper_counter"),
             "allocate counter"
@@ -741,7 +731,6 @@ impl<'ctx> CodeGen<'ctx> {
             "branch to loop"
         )?;
 
-        // Loop condition
         self.builder.position_at_end(loop_bb);
         let current_counter = self.safe_build(
             self.builder.build_load(self.i64_type, counter, "load_counter"),
@@ -758,10 +747,8 @@ impl<'ctx> CodeGen<'ctx> {
             "conditional branch"
         )?;
 
-        // Loop body - convert character
         self.builder.position_at_end(loop_body_bb);
 
-        // Get character at current position
         let char_ptr = unsafe {
             self.safe_build(
                 self.builder.build_gep(self.context.i8_type(), buffer, &[current_counter], "char_ptr"),
@@ -774,13 +761,11 @@ impl<'ctx> CodeGen<'ctx> {
             "load character"
         )?.into_int_value();
 
-        // Convert to i64 for comparison
         let char_as_i64 = self.safe_build(
             self.builder.build_int_z_extend(char_val, self.i64_type, "char_ext"),
             "extend character to i64"
         )?;
 
-        // Check if it's lowercase (a-z: 97-122)
         let a_val = self.i64_type.const_int(97, false);  // 'a'
         let z_val = self.i64_type.const_int(122, false); // 'z'
 
@@ -799,20 +784,17 @@ impl<'ctx> CodeGen<'ctx> {
             "check if lowercase"
         )?;
 
-        // Convert to uppercase by subtracting 32
         let diff = self.i64_type.const_int(32, false);
         let upper_char = self.safe_build(
             self.builder.build_int_sub(char_as_i64, diff, "upper_char"),
             "convert to uppercase"
         )?;
 
-        // Select between original and uppercase
         let final_char = self.safe_build(
             self.builder.build_select(is_lowercase, upper_char, char_as_i64, "final_char"),
             "select final character"
         )?;
 
-        // Convert back to i8 and store
         let final_char_i8 = self.safe_build(
             self.builder.build_int_truncate(final_char.into_int_value(), self.context.i8_type(), "final_char_i8"),
             "truncate to i8"
@@ -823,7 +805,6 @@ impl<'ctx> CodeGen<'ctx> {
             "store uppercase character"
         )?;
 
-        // Increment counter
         let incremented = self.safe_build(
             self.builder.build_int_add(current_counter, one, "increment"),
             "increment counter"
@@ -839,7 +820,6 @@ impl<'ctx> CodeGen<'ctx> {
             "branch back to loop"
         )?;
 
-        // After loop
         self.builder.position_at_end(after_loop_bb);
         Ok(buffer.into())
     }
@@ -853,12 +833,10 @@ impl<'ctx> CodeGen<'ctx> {
 
         let string_arg = self.generate_expression(&args[0])?;
 
-        // Get built-in functions
         let malloc_fn = self.get_built_in_function("malloc")?;
         let strlen_fn = self.get_built_in_function("strlen")?;
         let strcpy_fn = self.get_built_in_function("strcpy")?;
 
-        // Get string length
         let length_call = self.safe_build(
             self.builder.build_call(strlen_fn, &[string_arg.into()], "strlen_call"),
             "call strlen for minuscula"
@@ -867,7 +845,6 @@ impl<'ctx> CodeGen<'ctx> {
             .ok_or_else(|| CompilerError::CodeGen("Failed to get length".to_string()))?
             .into_int_value();
 
-        // Allocate new buffer (length + 1 for null terminator)
         let one = self.i64_type.const_int(1, false);
         let buffer_size = self.safe_build(
             self.builder.build_int_add(length, one, "buffer_size"),
@@ -882,20 +859,16 @@ impl<'ctx> CodeGen<'ctx> {
             .ok_or_else(|| CompilerError::CodeGen("Failed to allocate buffer".to_string()))?
             .into_pointer_value();
 
-        // Copy original string to buffer
         self.safe_build(
             self.builder.build_call(strcpy_fn, &[buffer.into(), string_arg.into()], "strcpy_call"),
             "copy string to buffer"
         )?;
 
-        // Convert to lowercase by iterating through characters
-        // Simple implementation: for ASCII characters, convert A-Z to a-z
         let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
         let loop_bb = self.context.append_basic_block(current_function, "lower_loop");
         let loop_body_bb = self.context.append_basic_block(current_function, "lower_body");
         let after_loop_bb = self.context.append_basic_block(current_function, "lower_done");
 
-        // Initialize loop counter
         let counter = self.safe_build(
             self.builder.build_alloca(self.i64_type, "lower_counter"),
             "allocate counter"
@@ -911,7 +884,6 @@ impl<'ctx> CodeGen<'ctx> {
             "branch to loop"
         )?;
 
-        // Loop condition
         self.builder.position_at_end(loop_bb);
         let current_counter = self.safe_build(
             self.builder.build_load(self.i64_type, counter, "load_counter"),
@@ -928,10 +900,8 @@ impl<'ctx> CodeGen<'ctx> {
             "conditional branch"
         )?;
 
-        // Loop body - convert character
         self.builder.position_at_end(loop_body_bb);
 
-        // Get character at current position
         let char_ptr = unsafe {
             self.safe_build(
                 self.builder.build_gep(self.context.i8_type(), buffer, &[current_counter], "char_ptr"),
@@ -944,13 +914,11 @@ impl<'ctx> CodeGen<'ctx> {
             "load character"
         )?.into_int_value();
 
-        // Convert to i64 for comparison
         let char_as_i64 = self.safe_build(
             self.builder.build_int_z_extend(char_val, self.i64_type, "char_ext"),
             "extend character to i64"
         )?;
 
-        // Check if it's uppercase (A-Z: 65-90)
         let a_val = self.i64_type.const_int(65, false);  // 'A'
         let z_val = self.i64_type.const_int(90, false);  // 'Z'
 
@@ -969,20 +937,17 @@ impl<'ctx> CodeGen<'ctx> {
             "check if uppercase"
         )?;
 
-        // Convert to lowercase by adding 32
         let diff = self.i64_type.const_int(32, false);
         let lower_char = self.safe_build(
             self.builder.build_int_add(char_as_i64, diff, "lower_char"),
             "convert to lowercase"
         )?;
 
-        // Select between original and lowercase
         let final_char = self.safe_build(
             self.builder.build_select(is_uppercase, lower_char, char_as_i64, "final_char"),
             "select final character"
         )?;
 
-        // Convert back to i8 and store
         let final_char_i8 = self.safe_build(
             self.builder.build_int_truncate(final_char.into_int_value(), self.context.i8_type(), "final_char_i8"),
             "truncate to i8"
@@ -993,7 +958,6 @@ impl<'ctx> CodeGen<'ctx> {
             "store lowercase character"
         )?;
 
-        // Increment counter
         let incremented = self.safe_build(
             self.builder.build_int_add(current_counter, one, "increment"),
             "increment counter"
@@ -1009,7 +973,6 @@ impl<'ctx> CodeGen<'ctx> {
             "branch back to loop"
         )?;
 
-        // After loop
         self.builder.position_at_end(after_loop_bb);
         Ok(buffer.into())
     }
@@ -1023,7 +986,6 @@ impl<'ctx> CodeGen<'ctx> {
 
         let arg_value = self.generate_expression(&args[0])?;
 
-        // Get the matematica_absoluto function
         let absoluto_fn = self.module.get_function("matematica_absoluto")
             .ok_or_else(|| CompilerError::CodeGen("matematica_absoluto function not found".to_string()))?;
 
@@ -1046,7 +1008,6 @@ impl<'ctx> CodeGen<'ctx> {
         let base_value = self.generate_expression(&args[0])?;
         let exp_value = self.generate_expression(&args[1])?;
 
-        // Get the matematica_potencia function
         let potencia_fn = self.module.get_function("matematica_potencia")
             .ok_or_else(|| CompilerError::CodeGen("matematica_potencia function not found".to_string()))?;
 
@@ -1068,7 +1029,6 @@ impl<'ctx> CodeGen<'ctx> {
 
         let arg_value = self.generate_expression(&args[0])?;
 
-        // Get the matematica_raiz_quadrada function
         let raiz_fn = self.module.get_function("matematica_raiz_quadrada")
             .ok_or_else(|| CompilerError::CodeGen("matematica_raiz_quadrada function not found".to_string()))?;
 
@@ -1195,7 +1155,6 @@ impl<'ctx> CodeGen<'ctx> {
     }
 
     fn get_or_create_string_literal(&mut self, text: &str) -> PointerValue<'ctx> {
-        // For object keys, we'll reuse the format_strings cache
         if let Some(&ptr) = self.format_strings.get(text) {
             return ptr;
         }
@@ -1395,14 +1354,11 @@ impl<'ctx> CodeGen<'ctx> {
     }
 
     fn generate_array_literal(&mut self, elements: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
-        // For arrays, we'll allocate space on the heap and store elements
         let array_size = elements.len();
         let size_value = self.i64_type.const_int(array_size as u64, false);
 
-        // Calculate total size needed: size + elements (8 bytes each for i64)
         let total_size = self.i64_type.const_int(((array_size + 1) * 8) as u64, false);
 
-        // Call malloc to allocate memory
         let malloc_fn = self.get_built_in_function("malloc")?;
 
         let array_ptr = self.safe_build(
@@ -1414,24 +1370,20 @@ impl<'ctx> CodeGen<'ctx> {
             .ok_or_else(|| CompilerError::CodeGen("malloc call failed".to_string()))?
             .into_pointer_value();
 
-        // Cast to i64 pointer
         let array_ptr = self.safe_build(
             self.builder.build_pointer_cast(array_ptr, self.context.ptr_type(AddressSpace::default()), "array_cast"),
             "cast array pointer"
         )?;
 
-        // Store array size as the first element
         self.safe_build(
             self.builder.build_store(array_ptr, size_value),
             "store array size"
         )?;
 
-        // Store each element
         for (i, element) in elements.iter().enumerate() {
             let element_val = self.generate_expression(element)?;
             let element_int = self.value_to_int(element_val, &format!("array_element_{}", i))?;
 
-            // Calculate pointer to array[i+1] (since array[0] is the size)
             let index = self.i64_type.const_int((i + 1) as u64, false);
             let element_ptr = unsafe {
                 self.safe_build(
@@ -1456,14 +1408,12 @@ impl<'ctx> CodeGen<'ctx> {
         let array_ptr = array_val.into_pointer_value();
         let index_int = self.value_to_int(index_val, "array_index")?;
 
-        // Add 1 to index since array[0] contains the size
         let one = self.i64_type.const_int(1, false);
         let adjusted_index = self.safe_build(
             self.builder.build_int_add(index_int, one, "adjusted_index"),
             "adjust array index"
         )?;
 
-        // Get pointer to array[index+1]
         let element_ptr = unsafe {
             self.safe_build(
                 self.builder.build_gep(self.i64_type, array_ptr, &[adjusted_index], "array_element_ptr"),
@@ -1471,7 +1421,6 @@ impl<'ctx> CodeGen<'ctx> {
             )?
         };
 
-        // Load the value
         let element_val = self.safe_build(
             self.builder.build_load(self.i64_type, element_ptr, "array_element"),
             "load array element"
@@ -1481,12 +1430,8 @@ impl<'ctx> CodeGen<'ctx> {
     }
 
     fn generate_object_literal(&mut self, properties: &[(String, Expr)]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
-        // For now, implement objects as simple structs with string keys
-        // We'll store objects as arrays of key-value pairs
         let obj_size = properties.len();
 
-        // Allocate space for: size + (key_ptr, value) pairs
-        // Each pair: 16 bytes (8 for key pointer + 8 for value)
         let total_size = self.i64_type.const_int(((obj_size * 2 + 1) * 8) as u64, false);
 
         let malloc_fn = self.get_built_in_function("malloc")?;
@@ -1504,23 +1449,18 @@ impl<'ctx> CodeGen<'ctx> {
             "cast object pointer"
         )?;
 
-        // Store object size (number of properties)
         let size_value = self.i64_type.const_int(obj_size as u64, false);
         self.safe_build(
             self.builder.build_store(obj_ptr, size_value),
             "store object size"
         )?;
 
-        // Store each property as key-value pairs
         for (i, (key, value)) in properties.iter().enumerate() {
-            // Create string literal for key
             let key_str = self.get_or_create_string_literal(key);
 
-            // Calculate offset for this property (size + i*2 for key, size + i*2+1 for value)
             let key_index = self.i64_type.const_int((i * 2 + 1) as u64, false);
             let value_index = self.i64_type.const_int((i * 2 + 2) as u64, false);
 
-            // Store key pointer
             let key_ptr = unsafe {
                 self.safe_build(
                     self.builder.build_gep(self.i64_type, obj_ptr, &[key_index], &format!("obj_key_ptr_{}", i)),
@@ -1528,7 +1468,6 @@ impl<'ctx> CodeGen<'ctx> {
                 )?
             };
 
-            // Cast string to i64 for storage
             let key_as_int = self.safe_build(
                 self.builder.build_ptr_to_int(key_str, self.i64_type, "key_as_int"),
                 "convert key string to int"
@@ -1539,7 +1478,6 @@ impl<'ctx> CodeGen<'ctx> {
                 &format!("store object key {}", i)
             )?;
 
-            // Store value
             let value_val = self.generate_expression(value)?;
             let value_int = self.value_to_int(value_val, &format!("object_value_{}", i))?;
 
@@ -1563,28 +1501,23 @@ impl<'ctx> CodeGen<'ctx> {
         let obj_val = self.generate_expression(object)?;
         let obj_ptr = obj_val.into_pointer_value();
 
-        // Load object size
         let size_ptr = obj_ptr;
         let size_val = self.safe_build(
             self.builder.build_load(self.i64_type, size_ptr, "object_size"),
             "load object size"
         )?.into_int_value();
 
-        // Create property string for comparison
         let prop_str = self.get_or_create_string_literal(property);
         let prop_as_int = self.safe_build(
             self.builder.build_ptr_to_int(prop_str, self.i64_type, "prop_as_int"),
             "convert property string to int"
         )?;
 
-        // For now, implement linear search (could be optimized with hash table later)
-        // We'll generate a simple loop to find the property
         let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
         let loop_bb = self.context.append_basic_block(current_function, "prop_search");
         let found_bb = self.context.append_basic_block(current_function, "prop_found");
         let not_found_bb = self.context.append_basic_block(current_function, "prop_not_found");
 
-        // Initialize loop counter
         let counter = self.safe_build(
             self.builder.build_alloca(self.i64_type, "counter"),
             "allocate counter"
@@ -1600,14 +1533,12 @@ impl<'ctx> CodeGen<'ctx> {
             "branch to loop"
         )?;
 
-        // Loop block
         self.builder.position_at_end(loop_bb);
         let current_counter = self.safe_build(
             self.builder.build_load(self.i64_type, counter, "load_counter"),
             "load counter"
         )?.into_int_value();
 
-        // Check if we've reached the end
         let is_end = self.safe_build(
             self.builder.build_int_compare(inkwell::IntPredicate::EQ, current_counter, size_val, "is_end"),
             "check if end reached"
@@ -1618,15 +1549,12 @@ impl<'ctx> CodeGen<'ctx> {
             "conditional branch"
         )?;
 
-        // Not found block - return 0 for now
         self.builder.position_at_end(not_found_bb);
         let not_found_val = self.i64_type.const_int(0, false);
 
-        // Found block - this is a placeholder, actual property lookup would go here
         self.builder.position_at_end(found_bb);
         let found_val = self.i64_type.const_int(42, false); // Placeholder value
 
-        // For now, just return placeholder value
         Ok(found_val.into())
     }
 
