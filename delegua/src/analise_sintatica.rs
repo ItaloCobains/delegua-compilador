@@ -3,10 +3,10 @@ use crate::ast::{Espressao, OperacaoBinaria, Declaracao, Programa};
 use crate::error::CompilerError;
 use crate::simbolo::Posicao;
 
-/// Analisador sintático para a linguagem de programação Delegua.
+/// Avaliador Sintático para a linguagem de programação Delegua.
 /// Recebe uma lista de tokens e produz uma árvore de sintaxe abstrata (AST).
 /// Implementa um analisador recursivo descendente com tratamento de erros.
-pub struct AnaliseSintatica<'a> {
+pub struct AvaliadorSintatico<'a> {
     /// Lista de tokens a serem analisados.
     simbolos: Vec<Simbolo<'a>>,
     /// Índice do token atual na lista.
@@ -15,14 +15,14 @@ pub struct AnaliseSintatica<'a> {
     eof_simbolo: Simbolo<'a>,
 }
 
-impl<'a> AnaliseSintatica<'a> {
-    /// Gera uma nova instância do analisador sintático com a lista de tokens fornecida.
+impl<'a> AvaliadorSintatico<'a> {
+    /// Gera uma nova instância do Avaliador Sintático com a lista de tokens fornecida.
     /// # Argumentos
     /// * `simbolos` - Vetor de tokens a serem analisados.
     /// # Retorna
-    /// Nova instância do analisador sintático.
+    /// Nova instância do Avaliador Sintático.
     pub fn new(simbolos: Vec<Simbolo<'a>>) -> Self {
-        AnaliseSintatica { 
+        AvaliadorSintatico { 
             simbolos, 
             atual: 0,
             eof_simbolo: Simbolo::EOF(Posicao::default()),
@@ -47,7 +47,7 @@ impl<'a> AnaliseSintatica<'a> {
                 Err(err) => {
                     errors.push(err.clone());
                     if errors.len() > 10 {
-                        return Err(CompilerError::Parser(
+                        return Err(CompilerError::AvaliadorSintatico(
                             format!("Muitos erros de análise ({}). Primeiro erro: {}", 
                                    errors.len(), errors[0])
                         ));
@@ -83,14 +83,14 @@ impl<'a> AnaliseSintatica<'a> {
                 if let Simbolo::Identificador(_, _) = self.simbolo_atual() {
                     self.resolve_declaracao_funcao()
                 } else {
-                    Err(CompilerError::Parser("Inesperado 'funcao' no contexto da declaração".to_string()))
+                    Err(CompilerError::AvaliadorSintatico("Inesperado 'funcao' no contexto da declaração".to_string()))
                 }
             }
             Simbolo::Retorna(_) => self.resolve_retorna_declaracao(),
             Simbolo::Identificador(_, _) => self.resolve_atribuicao_ou_chamada(),
             Simbolo::Incremento(_) => self.resolve_prefixo_incremento_decremento(true),
             Simbolo::Decremento(_) => self.resolve_prefixo_incremento_decremento(false),
-            _ => Err(CompilerError::Parser(format!(
+            _ => Err(CompilerError::AvaliadorSintatico(format!(
                 "Token inesperado: {:?}", self.simbolo_atual()
             ))),
         }
@@ -137,7 +137,7 @@ impl<'a> AnaliseSintatica<'a> {
                 prefixo: false, // postfix: x--
             }))
         } else {
-            Err(CompilerError::Parser(
+            Err(CompilerError::AvaliadorSintatico(
                 "Esperado '=', '(', '++', ou '--' após o identificador".to_string()
             ))
         }
@@ -148,7 +148,7 @@ impl<'a> AnaliseSintatica<'a> {
         
         let nome = match self.simbolo_atual() {
             Simbolo::Identificador(nome, _) => nome.to_string(),
-            _ => return Err(CompilerError::Parser("Esperado identificador após ++ ou --".to_string())),
+            _ => return Err(CompilerError::AvaliadorSintatico("Esperado identificador após ++ ou --".to_string())),
         };
         self.avancar();
 
@@ -189,12 +189,12 @@ impl<'a> AnaliseSintatica<'a> {
                     items.push(name);
                     self.avancar();
                 } else {
-                    return Err(CompilerError::Parser("Esperado identificador na lista de importação".to_string()));
+                    return Err(CompilerError::AvaliadorSintatico("Esperado identificador na lista de importação".to_string()));
                 }
                 if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::Virgula)) {
                     // continue
                 } else if !self.compara(Self::simbolo_com_posicao(Simbolo::ChaveDireita)) {
-                    return Err(CompilerError::Parser("Esperado ',' ou '}' na lista de importação".to_string()));
+                    return Err(CompilerError::AvaliadorSintatico("Esperado ',' ou '}' na lista de importação".to_string()));
                 }
             }
             self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveDireita), "Esperado '}' após a lista de importação")?;
@@ -205,10 +205,10 @@ impl<'a> AnaliseSintatica<'a> {
                 self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a importação")?;
                 Ok(Declaracao::Importacao { modulo: module, itens: Some(items) })
             } else {
-                Err(CompilerError::Parser("Esperado nome do módulo após 'from'".to_string()))
+                Err(CompilerError::AvaliadorSintatico("Esperado nome do módulo após 'from'".to_string()))
             }
         } else {
-            Err(CompilerError::Parser("Esperado string ou '{' após 'importar'".to_string()))
+            Err(CompilerError::AvaliadorSintatico("Esperado string ou '{' após 'importar'".to_string()))
         }
     }
 
@@ -263,7 +263,7 @@ impl<'a> AnaliseSintatica<'a> {
                 }
                 _ => {
                     let pos = self.posicao_atual();
-                    return Err(CompilerError::Parser(
+                    return Err(CompilerError::AvaliadorSintatico(
                         format!("Esperado nome do parâmetro na linha {}, coluna {}", 
                                pos.linha, pos.coluna)
                     ));
@@ -487,7 +487,7 @@ impl<'a> AnaliseSintatica<'a> {
                             propriedade: property,
                         };
                     } else {
-                        return Err(CompilerError::Parser("Expected property name after '.'".to_string()));
+                        return Err(CompilerError::AvaliadorSintatico("Expected property name after '.'".to_string()));
                     }
                 }
                 _ => break,
@@ -700,7 +700,7 @@ impl<'a> AnaliseSintatica<'a> {
                                 self.avancar();
                                 key
                             }
-                            _ => return Err(CompilerError::Parser("Esperado nome da propriedade no literal de objeto".to_string())),
+                            _ => return Err(CompilerError::AvaliadorSintatico("Esperado nome da propriedade no literal de objeto".to_string())),
                         };
 
                         self.consumir(Self::simbolo_com_posicao(Simbolo::DoisPontos), "Esperado ':' após o nome da propriedade")?;
@@ -718,7 +718,7 @@ impl<'a> AnaliseSintatica<'a> {
                 self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveDireita), "Esperado '}' após propriedades do objeto")?;
                 Ok(Espressao::Objeto { propriedades: properties })
             }
-            _ => Err(CompilerError::Parser(format!(
+            _ => Err(CompilerError::AvaliadorSintatico(format!(
                 "Token inesperado na expressão: {:?}", self.simbolo_atual()
             ))),
         }
@@ -758,7 +758,7 @@ impl<'a> AnaliseSintatica<'a> {
             Ok(result)
         } else {
             let pos = self.posicao_atual();
-            Err(CompilerError::Parser(
+            Err(CompilerError::AvaliadorSintatico(
                 format!("{} at line {}, column {}. Found: {:?}", 
                        message, pos.linha, pos.coluna, self.simbolo_atual())
             ))
@@ -786,7 +786,7 @@ impl<'a> AnaliseSintatica<'a> {
             self.avancar();
             Ok(name)
         } else {
-            Err(CompilerError::Parser(message.to_string()))
+            Err(CompilerError::AvaliadorSintatico(message.to_string()))
         }
     }
 
@@ -913,7 +913,7 @@ impl<'a> AnaliseSintatica<'a> {
 
                 default = Some(default_statements);
             } else {
-                return Err(CompilerError::Parser("Esperado 'caso' ou 'padrao' na declaração switch".to_string()));
+                return Err(CompilerError::AvaliadorSintatico("Esperado 'caso' ou 'padrao' na declaração switch".to_string()));
             }
         }
 
@@ -957,7 +957,7 @@ impl<'a> AnaliseSintatica<'a> {
         } else if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::PontoEVirgula)) {
             None
         } else {
-            return Err(CompilerError::Parser("Esperado declaração de variável ou ';' no loop for".to_string()));
+            return Err(CompilerError::AvaliadorSintatico("Esperado declaração de variável ou ';' no loop for".to_string()));
         };
         self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após o inicializador")?;
 
@@ -1069,7 +1069,7 @@ mod tests {
     fn test_parse_variable_declaration() {
         let mut lexer = Lexador::new();
         let tokens = lexer.analisar("var x = 42;");
-        let mut parser = AnaliseSintatica::new(tokens);
+        let mut parser = AvaliadorSintatico::new(tokens);
 
         let program = parser.analisar().unwrap();
         assert_eq!(program.declaracoes.len(), 1);
@@ -1092,7 +1092,7 @@ mod tests {
             escreva("Sum: " + texto(a + b));
         "#;
         let tokens = lexer.analisar(code);
-        let mut parser = AnaliseSintatica::new(tokens);
+        let mut parser = AvaliadorSintatico::new(tokens);
 
         let program = parser.analisar().unwrap();
         assert_eq!(program.declaracoes.len(), 3);

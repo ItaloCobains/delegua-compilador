@@ -2,7 +2,7 @@ use std::fmt;
 
 #[derive(Debug, Clone)]
 pub enum CompilerError {
-    Parser(String),
+    AvaliadorSintatico(String),
 
     CodeGen(String),
 
@@ -12,7 +12,7 @@ pub enum CompilerError {
 impl fmt::Display for CompilerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CompilerError::Parser(msg) => write!(f, "Parser Error: {}", msg),
+            CompilerError::AvaliadorSintatico(msg) => write!(f, "Avaliador Sintatico Error: {}", msg),
             CompilerError::CodeGen(msg) => write!(f, "Code Generation Error: {}", msg),
             CompilerError::Io(err) => write!(f, "I/O Error: {}", err),
         }
