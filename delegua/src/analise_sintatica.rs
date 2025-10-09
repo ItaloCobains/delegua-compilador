@@ -169,7 +169,7 @@ impl<'a> AvaliadorSintatico<'a> {
 
     fn resolve_chamada_de_declaracao_funcao(&mut self) -> Result<Declaracao, CompilerError> {
         let expr = self.resolve_chamada_funcao()?;
-        self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a chamada de função")?;
+        let _ = self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a chamada de função");
         Ok(Declaracao::ChamadaDeFuncao(expr))
     }
 

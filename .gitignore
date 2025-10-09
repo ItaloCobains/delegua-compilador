@@ -1,2 +1,4 @@
 /target
 delegua_compilador_history.txt
+*.ll
+*.s
