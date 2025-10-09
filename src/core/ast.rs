@@ -1,145 +1,145 @@
 #[derive(Debug, PartialEq, Clone)]
-pub enum Expr {
-    Number(i64),
+pub enum Expressoes {
+    Numero(i64),
 
-    String(String),
+    Texto(String),
 
-    Bool(bool),
+    Logico(bool),
 
-    Identifier(String),
+    Identificador(String),
 
-    Unary {
-        operator: BinaryOp,
-        operand: Box<Expr>,
+    Unario {
+        operador: OperacaoBinaria,
+        operando: Box<Expressoes>,
     },
 
-    Binary {
-        left: Box<Expr>,
-        operator: BinaryOp,
-        right: Box<Expr>,
+    Binario {
+        esquerda: Box<Expressoes>,
+        operador: OperacaoBinaria,
+        direita: Box<Expressoes>,
     },
 
-    FunctionCall {
-        callee: Box<Expr>,
-        args: Vec<Expr>,
-    },
-    
-    Increment {
-        operand: Box<Expr>,
-        prefix: bool, // true for ++x, false for x++
+    ChamadaFuncao {
+        chamado: Box<Expressoes>,
+        argumentos: Vec<Expressoes>,
     },
     
-    Decrement {
-        operand: Box<Expr>,
-        prefix: bool, // true for --x, false for x--
+    Incremento {
+        operando: Box<Expressoes>,
+        prefixo: bool, // true for ++x, false for x++
+    },
+    
+    Decremento {
+        operando: Box<Expressoes>,
+        prefixo: bool, // true for --x, false for x--
     },
 
-    Function {
-        params: Vec<String>,
-        body: Vec<Statement>,
+    Funcao {
+        paramentros: Vec<String>,
+        corpo: Vec<Declaracao>,
     },
 
-    Array {
-        elements: Vec<Expr>,
+    Lista {
+        elementos: Vec<Expressoes>,
     },
 
-    Index {
-        array: Box<Expr>,
-        index: Box<Expr>,
+    Indice {
+        lista: Box<Expressoes>,
+        indice: Box<Expressoes>,
     },
 
-    Object {
-        properties: Vec<(String, Expr)>,
+    Objeto {
+        propriedades: Vec<(String, Expressoes)>,
     },
 
-    PropertyAccess {
-        object: Box<Expr>,
-        property: String,
+    PropriedadeAcesso {
+        objeto: Box<Expressoes>,
+        propriedade: String,
     },
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum BinaryOp {
-    Add, Subtract, Multiply, Divide, Modulo, Power,
-    Equal, NotEqual, Less, Greater, LessEqual, GreaterEqual,
-    And, Or, Not,
+pub enum OperacaoBinaria {
+    Adicao, Subtracao, Multiplicacao, Divisao, Modulo, Potencia,
+    Igual, NaoIgual, Menor, Maior, MenorIgual, MaiorIgual,
+    E, Ou, Nao,
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub enum Statement {
-    VarDeclaration {
-        name: String,
-        value: Expr,
+pub enum Declaracao {
+    Variavel {
+        nome: String,
+        valor: Expressoes,
     },
 
-    Assignment {
-        name: String,
-        value: Expr,
+    Atribuicao {
+        nome: String,
+        valor: Expressoes,
     },
 
-    Import {
-        module: String,
-        items: Option<Vec<String>>,
+    Importacao {
+        modulo: String,
+        itens: Option<Vec<String>>,
     },
 
-    If {
-        condition: Expr,
-        then_branch: Vec<Statement>,
-        else_branch: Option<Vec<Statement>>,
+    Se {
+        condicao: Expressoes,
+        ramificacao_entao: Vec<Declaracao>,
+        ramificacao_outro: Option<Vec<Declaracao>>,
     },
 
-    IfElseIf {
-        condition: Expr,
-        then_branch: Vec<Statement>,
-        else_if_branches: Vec<(Expr, Vec<Statement>)>,
-        else_branch: Option<Vec<Statement>>,
+    SeSenao {
+        condicao: Expressoes,
+        ramificacao_entao: Vec<Declaracao>,
+        ramificacao_se_outro: Vec<(Expressoes, Vec<Declaracao>)>,
+        ramificacao_outro: Option<Vec<Declaracao>>,
     },
 
-    Switch {
-        value: Expr,
-        cases: Vec<(Expr, Vec<Statement>)>,
-        default: Option<Vec<Statement>>,
+    Selecao { // Switch
+        valor: Expressoes,
+        casos: Vec<(Expressoes, Vec<Declaracao>)>,
+        padrao: Option<Vec<Declaracao>>,
     },
 
     While {
-        condition: Expr,
-        body: Vec<Statement>,
+        condition: Expressoes,
+        body: Vec<Declaracao>,
     },
 
     DoWhile {
-        body: Vec<Statement>,
-        condition: Expr,
+        body: Vec<Declaracao>,
+        condition: Expressoes,
     },
 
     For {
-        initializer: Option<Box<Statement>>,
-        condition: Option<Expr>,
-        increment: Option<Expr>,
-        body: Vec<Statement>,
+        initializer: Option<Box<Declaracao>>,
+        condition: Option<Expressoes>,
+        increment: Option<Expressoes>,
+        body: Vec<Declaracao>,
     },
 
     ForEach {
         variable: String,
-        iterable: Expr,
-        body: Vec<Statement>,
+        iterable: Expressoes,
+        body: Vec<Declaracao>,
     },
 
     Break,
 
     Continue,
 
-    FunctionCall(Expr),
+    FunctionCall(Expressoes),
 
     FunctionDeclaration {
         name: Option<String>,
         params: Vec<String>,
-        body: Vec<Statement>,
+        body: Vec<Declaracao>,
     },
 
-    Return(Option<Expr>),
+    Return(Option<Expressoes>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
 pub struct Program {
-    pub statements: Vec<Statement>,
+    pub statements: Vec<Declaracao>,
 }

@@ -469,4 +469,68 @@ mod tests {
         assert!(matches!(tokens[9], Simbolo::PontoEVirgula(_)));
         assert!(matches!(tokens[10], Simbolo::EOF(_)));
     }
+
+    #[test]
+    fn test_se_senao() {
+        let mut lexer = Lexador::new();
+        let tokens = lexer.analisar("se (x == 1) { escreva(\"Um\") } senao { escreva(\"Dois\") }");
+        assert_eq!(tokens.len(),  20);
+        assert!(matches!(tokens[0], Simbolo::Se(_)));
+        assert!(matches!(tokens[1], Simbolo::ParenteseEsquerdo(_)));
+        assert!(matches!(tokens[2], Simbolo::Identificador("x", _)));
+        assert!(matches!(tokens[3], Simbolo::Igual(_)));
+        assert!(matches!(tokens[4], Simbolo::Number(1, _)));
+        assert!(matches!(tokens[5], Simbolo::ParenteseDireito(_)));
+        assert!(matches!(tokens[6], Simbolo::ChaveEsquerda(_)));
+        assert!(matches!(tokens[7], Simbolo::Escreva(_)));
+        assert!(matches!(tokens[8], Simbolo::ParenteseEsquerdo(_)));
+        assert!(matches!(tokens[9], Simbolo::Texto("Um", _)));
+        assert!(matches!(tokens[10], Simbolo::ParenteseDireito(_)));
+        assert!(matches!(tokens[11], Simbolo::ChaveDireita(_)));
+        assert!(matches!(tokens[12], Simbolo::Senao(_)));
+        assert!(matches!(tokens[13], Simbolo::ChaveEsquerda(_)));
+        assert!(matches!(tokens[14], Simbolo::Escreva(_)));
+        assert!(matches!(tokens[15], Simbolo::ParenteseEsquerdo(_)));
+        assert!(matches!(tokens[16], Simbolo::Texto("Dois", _)));
+        assert!(matches!(tokens[17], Simbolo::ParenteseDireito(_)));
+        assert!(matches!(tokens[18], Simbolo::ChaveDireita(_)));
+        assert!(matches!(tokens[19], Simbolo::EOF(_)));
+    }
+
+    #[test]
+    fn test_escolha() {
+        let mut lexer = Lexador::new();
+        let tokens = lexer.analisar("escolha (x) { caso 1: escreva(\"Um\"); caso 2: escreva(\"Dois\"); padrao: escreva(\"Outro\"); }");
+        assert_eq!(tokens.len(),  30);
+        assert!(matches!(tokens[0], Simbolo::Escolha(_)));
+        assert!(matches!(tokens[1], Simbolo::ParenteseEsquerdo(_)));
+        assert!(matches!(tokens[2], Simbolo::Identificador("x", _)));
+        assert!(matches!(tokens[3], Simbolo::ParenteseDireito(_)));
+        assert!(matches!(tokens[4], Simbolo::ChaveEsquerda(_)));
+        assert!(matches!(tokens[5], Simbolo::Caso(_)));
+        assert!(matches!(tokens[6], Simbolo::Number(1, _)));
+        assert!(matches!(tokens[7], Simbolo::DoisPontos(_)));
+        assert!(matches!(tokens[8], Simbolo::Escreva(_)));
+        assert!(matches!(tokens[9], Simbolo::ParenteseEsquerdo(_)));
+        assert!(matches!(tokens[10], Simbolo::Texto("Um", _)));
+        assert!(matches!(tokens[11], Simbolo::ParenteseDireito(_)));
+        assert!(matches!(tokens[12], Simbolo::PontoEVirgula(_)));
+        assert!(matches!(tokens[13], Simbolo::Caso(_)));
+        assert!(matches!(tokens[14], Simbolo::Number(2, _)));
+        assert!(matches!(tokens[15], Simbolo::DoisPontos(_)));
+        assert!(matches!(tokens[16], Simbolo::Escreva(_)));
+        assert!(matches!(tokens[17], Simbolo::ParenteseEsquerdo(_)));
+        assert!(matches!(tokens[18], Simbolo::Texto("Dois", _)));
+        assert!(matches!(tokens[19], Simbolo::ParenteseDireito(_)));
+        assert!(matches!(tokens[20], Simbolo::PontoEVirgula(_)));
+        assert!(matches!(tokens[21], Simbolo::Padrao(_)));
+        assert!(matches!(tokens[22], Simbolo::DoisPontos(_)));
+        assert!(matches!(tokens[23], Simbolo::Escreva(_)));
+        assert!(matches!(tokens[24], Simbolo::ParenteseEsquerdo(_)));
+        assert!(matches!(tokens[25], Simbolo::Texto("Outro", _)));
+        assert!(matches!(tokens[26], Simbolo::ParenteseDireito(_)));
+        assert!(matches!(tokens[27], Simbolo::PontoEVirgula(_)));
+        assert!(matches!(tokens[28], Simbolo::ChaveDireita(_)));
+        assert!(matches!(tokens[29], Simbolo::EOF(_)));
+    }
 }

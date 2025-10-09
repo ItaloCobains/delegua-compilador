@@ -24,7 +24,7 @@ impl<'ctx> VariableType<'ctx> {
 }
 use std::collections::HashMap;
 
-use crate::core::ast::{Program, Statement, Expr, BinaryOp};
+use crate::core::ast::{Program, Declaracao, Expressoes, OperacaoBinaria};
 use crate::core::error::CompilerError;
 use crate::modules::matematica::Matematica;
 
@@ -148,52 +148,52 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn generate_statement(&mut self, statement: &Statement) -> Result<(), CompilerError> {
+    fn generate_statement(&mut self, statement: &Declaracao) -> Result<(), CompilerError> {
         match statement {
-            Statement::VarDeclaration { name, value } => {
+            Declaracao::Variavel { nome: name, valor: value } => {
                 self.generate_variable_declaration(name, value)
             }
-            Statement::Assignment { name, value } => {
+            Declaracao::Atribuicao { nome: name, valor: value } => {
                 self.generate_assignment(name, value)
             }
-            Statement::Import { module, items } => {
+            Declaracao::Importacao { modulo: module, itens: items } => {
                 self.generate_import(module, items.as_ref())
             }
-            Statement::If { condition, then_branch, else_branch } => {
+            Declaracao::Se { condicao: condition, ramificacao_entao: then_branch, ramificacao_outro: else_branch } => {
                 self.generate_if_statement(condition, then_branch, else_branch.as_ref())
             }
-            Statement::IfElseIf { condition, then_branch, else_if_branches, else_branch } => {
+            Declaracao::SeSenao { condicao: condition, ramificacao_entao: then_branch, ramificacao_se_outro: else_if_branches, ramificacao_outro: else_branch } => {
                 self.generate_if_else_if_statement(condition, then_branch, else_if_branches, else_branch.as_ref())
             }
-            Statement::Switch { value, cases, default } => {
+            Declaracao::Selecao { valor: value, casos: cases, padrao: default } => {
                 self.generate_switch_statement(value, cases, default.as_ref())
             }
-            Statement::While { condition, body } => {
+            Declaracao::While { condition, body } => {
                 self.generate_while_statement(condition, body)
             }
-            Statement::DoWhile { body, condition } => {
+            Declaracao::DoWhile { body, condition } => {
                 self.generate_do_while_statement(body, condition)
             }
-            Statement::For { initializer, condition, increment, body } => {
+            Declaracao::For { initializer, condition, increment, body } => {
                 self.generate_for_statement(initializer.as_ref().map(|v| &**v), condition.as_ref(), increment.as_ref(), body)
             }
-            Statement::ForEach { variable, iterable, body } => {
+            Declaracao::ForEach { variable, iterable, body } => {
                 self.generate_for_each_statement(variable, iterable, body)
             }
-            Statement::Break => {
+            Declaracao::Break => {
                 self.generate_break_statement()
             }
-            Statement::Continue => {
+            Declaracao::Continue => {
                 self.generate_continue_statement()
             }
-            Statement::FunctionCall(expr) => {
+            Declaracao::FunctionCall(expr) => {
                 self.generate_expression(expr)?;
                 Ok(())
             }
-            Statement::FunctionDeclaration { name, params, body } => {
+            Declaracao::FunctionDeclaration { name, params, body } => {
                 self.generate_function_declaration(name.as_ref(), params, body)
             }
-            Statement::Return(value) => {
+            Declaracao::Return(value) => {
                 self.generate_return_statement(value.as_ref())
             }
         }
@@ -217,7 +217,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn generate_variable_declaration(&mut self, name: &str, value: &Expr) -> Result<(), CompilerError> {
+    fn generate_variable_declaration(&mut self, name: &str, value: &Expressoes) -> Result<(), CompilerError> {
         let val = self.generate_expression(value)?;
 
         let (alloca, var_type) = match val {
@@ -234,7 +234,7 @@ impl<'ctx> CodeGen<'ctx> {
             }
             BasicValueEnum::PointerValue(ptr_val) => {
                 match value {
-                    Expr::Function { .. } => {
+                    Expressoes::Funcao { .. } => {
                         let func_ptr_type = ptr_val.get_type();
                         let alloca = self.safe_build(
                             self.builder.build_alloca(func_ptr_type, name),
@@ -268,7 +268,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn generate_assignment(&mut self, name: &str, value: &Expr) -> Result<(), CompilerError> {
+    fn generate_assignment(&mut self, name: &str, value: &Expressoes) -> Result<(), CompilerError> {
         let val = self.generate_expression(value)?;
 
         if let Some(&(var_ptr, _)) = self.variables.get(name) {
@@ -289,14 +289,14 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn generate_expression(&mut self, expr: &Expr) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_expression(&mut self, expr: &Expressoes) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         match expr {
-            Expr::Number(n) => {
+            Expressoes::Numero(n) => {
                 let val = self.i64_type.const_int(*n as u64, false);
                 Ok(val.into())
             }
 
-            Expr::String(s) => {
+            Expressoes::Texto(s) => {
                 let string_val = self.context.const_string(s.as_bytes(), true);
                 let global = self.module.add_global(string_val.get_type(), None, "string_literal");
                 global.set_initializer(&string_val);
@@ -304,12 +304,12 @@ impl<'ctx> CodeGen<'ctx> {
                 Ok(ptr.into())
             }
 
-            Expr::Bool(b) => {
+            Expressoes::Logico(b) => {
                 let val = self.i64_type.const_int(if *b { 1 } else { 0 }, false);
                 Ok(val.into())
             }
 
-            Expr::Identifier(name) => {
+            Expressoes::Identificador(name) => {
                 if let Some(&(var_ptr, var_type)) = self.variables.get(name) {
                     let loaded = self.builder.build_load(var_type.as_basic_type_enum(), var_ptr, name)
                         .map_err(|e| CompilerError::CodeGen(format!("Error loading variable: {:?}", e)))?;
@@ -319,34 +319,34 @@ impl<'ctx> CodeGen<'ctx> {
                 }
             }
 
-            Expr::Binary { left, operator, right } => {
+            Expressoes::Binario { esquerda: left, operador: operator, direita: right } => {
                 let left_val = self.generate_expression(left)?;
                 let right_val = self.generate_expression(right)?;
 
                 match (left_val, right_val) {
                     (BasicValueEnum::IntValue(l), BasicValueEnum::IntValue(r)) => {
                         let (result, _op_name) = match operator {
-                            BinaryOp::Add => (self.safe_build(self.builder.build_int_add(l, r, "add"), "integer addition")?, "add"),
-                            BinaryOp::Subtract => (self.safe_build(self.builder.build_int_sub(l, r, "sub"), "integer subtraction")?, "sub"),
-                            BinaryOp::Multiply => (self.safe_build(self.builder.build_int_mul(l, r, "mul"), "integer multiplication")?, "mul"),
-                            BinaryOp::Divide => (self.safe_build(self.builder.build_int_signed_div(l, r, "div"), "integer division")?, "div"),
-                            BinaryOp::Modulo => (self.safe_build(self.builder.build_int_signed_rem(l, r, "mod"), "integer modulo")?, "mod"),
-                            BinaryOp::Power => (self.generate_integer_power(l, r)?, "pow"),
-                            BinaryOp::Equal => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::EQ, l, r, "eq"), "equality comparison")?, "eq"),
-                            BinaryOp::NotEqual => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::NE, l, r, "ne"), "inequality comparison")?, "ne"),
-                            BinaryOp::Less => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::SLT, l, r, "lt"), "less than comparison")?, "lt"),
-                            BinaryOp::Greater => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::SGT, l, r, "gt"), "greater than comparison")?, "gt"),
-                            BinaryOp::LessEqual => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::SLE, l, r, "le"), "less equal comparison")?, "le"),
-                            BinaryOp::GreaterEqual => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::SGE, l, r, "ge"), "greater equal comparison")?, "ge"),
-                            BinaryOp::And => (self.safe_build(self.builder.build_and(l, r, "and"), "logical and")?, "and"),
-                            BinaryOp::Or => (self.safe_build(self.builder.build_or(l, r, "or"), "logical or")?, "or"),
+                            OperacaoBinaria::Adicao => (self.safe_build(self.builder.build_int_add(l, r, "add"), "integer addition")?, "add"),
+                            OperacaoBinaria::Subtracao => (self.safe_build(self.builder.build_int_sub(l, r, "sub"), "integer subtraction")?, "sub"),
+                            OperacaoBinaria::Multiplicacao => (self.safe_build(self.builder.build_int_mul(l, r, "mul"), "integer multiplication")?, "mul"),
+                            OperacaoBinaria::Divisao => (self.safe_build(self.builder.build_int_signed_div(l, r, "div"), "integer division")?, "div"),
+                            OperacaoBinaria::Modulo => (self.safe_build(self.builder.build_int_signed_rem(l, r, "mod"), "integer modulo")?, "mod"),
+                            OperacaoBinaria::Potencia => (self.generate_integer_power(l, r)?, "pow"),
+                            OperacaoBinaria::Igual => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::EQ, l, r, "eq"), "equality comparison")?, "eq"),
+                            OperacaoBinaria::NaoIgual => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::NE, l, r, "ne"), "inequality comparison")?, "ne"),
+                            OperacaoBinaria::Menor => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::SLT, l, r, "lt"), "less than comparison")?, "lt"),
+                            OperacaoBinaria::Maior => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::SGT, l, r, "gt"), "greater than comparison")?, "gt"),
+                            OperacaoBinaria::MenorIgual => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::SLE, l, r, "le"), "less equal comparison")?, "le"),
+                            OperacaoBinaria::MaiorIgual => (self.safe_build(self.builder.build_int_compare(inkwell::IntPredicate::SGE, l, r, "ge"), "greater equal comparison")?, "ge"),
+                            OperacaoBinaria::E => (self.safe_build(self.builder.build_and(l, r, "and"), "logical and")?, "and"),
+                            OperacaoBinaria::Ou => (self.safe_build(self.builder.build_or(l, r, "or"), "logical or")?, "or"),
                             _ => return Err(CompilerError::CodeGen(format!("Unsupported binary operator for integers: {:?}", operator))),
                         };
                         Ok(result.into())
                     }
 
                     (BasicValueEnum::PointerValue(l), BasicValueEnum::PointerValue(r)) => {
-                        if matches!(operator, BinaryOp::Add) {
+                        if matches!(operator, OperacaoBinaria::Adicao) {
                             self.generate_string_concat(l, r)
                         } else {
                             Err(CompilerError::CodeGen("Only concatenation (+) is supported for strings".to_string()))
@@ -354,7 +354,7 @@ impl<'ctx> CodeGen<'ctx> {
                     }
 
                     (BasicValueEnum::PointerValue(l), BasicValueEnum::IntValue(r)) => {
-                        if matches!(operator, BinaryOp::Add) {
+                        if matches!(operator, OperacaoBinaria::Adicao) {
                             let r_str = self.int_to_string(r)?;
                             self.generate_string_concat(l, r_str)
                         } else {
@@ -366,14 +366,14 @@ impl<'ctx> CodeGen<'ctx> {
                 }
             }
 
-            Expr::Unary { operator, operand } => {
+            Expressoes::Unario { operador: operator, operando: operand } => {
                 let operand_val = self.generate_expression(operand)?;
                 match operand_val {
                     BasicValueEnum::IntValue(val) => {
                         let result = match operator {
-                            BinaryOp::Subtract => self.builder.build_int_neg(val, "neg")
+                            OperacaoBinaria::Subtracao => self.builder.build_int_neg(val, "neg")
                                 .map_err(|e| CompilerError::CodeGen(format!("Error building unary operation: {:?}", e)))?,
-                            BinaryOp::Not => self.builder.build_not(val, "not")
+                            OperacaoBinaria::Nao => self.builder.build_not(val, "not")
                                 .map_err(|e| CompilerError::CodeGen(format!("Error building logical not operation: {:?}", e)))?,
                             _ => return Err(CompilerError::CodeGen("Unsupported unary operator".to_string())),
                         };
@@ -383,9 +383,9 @@ impl<'ctx> CodeGen<'ctx> {
                 }
             }
 
-            Expr::FunctionCall { callee, args } => {
+            Expressoes::ChamadaFuncao { chamado: callee, argumentos: args } => {
                 match callee.as_ref() {
-                    Expr::Identifier(name) => {
+                    Expressoes::Identificador(name) => {
                         match name.as_str() {
                             "escreva" => self.generate_escreva_call(args),
                             "texto" => self.generate_texto_call(args),
@@ -440,37 +440,37 @@ impl<'ctx> CodeGen<'ctx> {
                     _ => Err(CompilerError::CodeGen("Function calls through expressions not yet supported".to_string())),
                 }
             }
-            Expr::Function { params, body } => {
+            Expressoes::Funcao { paramentros: params, corpo: body } => {
                 self.generate_anonymous_function(&params, &body)
             }
             
-            Expr::Increment { operand, prefix } => {
+            Expressoes::Incremento { operando: operand, prefixo: prefix } => {
                 self.generate_increment_decrement(operand, true, *prefix)
             }
             
-            Expr::Decrement { operand, prefix } => {
+            Expressoes::Decremento { operando: operand, prefixo: prefix } => {
                 self.generate_increment_decrement(operand, false, *prefix)
             }
 
-            Expr::Array { elements } => {
+            Expressoes::Lista { elementos: elements } => {
                 self.generate_array_literal(elements)
             }
 
-            Expr::Index { array, index } => {
+            Expressoes::Indice { lista: array, indice: index } => {
                 self.generate_array_index(array, index)
             }
 
-            Expr::Object { properties } => {
+            Expressoes::Objeto { propriedades: properties } => {
                 self.generate_object_literal(properties)
             }
 
-            Expr::PropertyAccess { object, property } => {
+            Expressoes::PropriedadeAcesso { objeto: object, propriedade: property } => {
                 self.generate_property_access(object, property)
             }
         }
     }
 
-    fn generate_module_function_call(&mut self, name: &str, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_module_function_call(&mut self, name: &str, args: &[Expressoes]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         let parts: Vec<&str> = name.split('.').collect();
         if parts.len() != 2 {
             return Err(CompilerError::CodeGen(format!("Invalid module function call: {}", name)));
@@ -506,7 +506,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn generate_user_function_call(&mut self, func: &FunctionValue<'ctx>, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_user_function_call(&mut self, func: &FunctionValue<'ctx>, args: &[Expressoes]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         let mut arg_values = Vec::new();
         for arg in args {
             arg_values.push(self.generate_expression(arg)?.into());
@@ -523,7 +523,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn generate_escreva_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_escreva_call(&mut self, args: &[Expressoes]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         if args.len() != 1 {
             return Err(CompilerError::CodeGen(
                 "escreva() expects exactly one argument".to_string()
@@ -564,7 +564,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(self.i64_type.const_int(0, false).into())
     }
 
-    fn generate_texto_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_texto_call(&mut self, args: &[Expressoes]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         if args.len() != 1 {
             return Err(CompilerError::CodeGen("texto() expects exactly one argument".to_string()));
         }
@@ -582,7 +582,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn generate_leia_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_leia_call(&mut self, args: &[Expressoes]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         let scanf_fn = self.get_built_in_function("scanf")?;
         let malloc_fn = self.get_built_in_function("malloc")?;
 
@@ -649,7 +649,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn generate_comprimento_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_comprimento_call(&mut self, args: &[Expressoes]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         if args.len() != 1 {
             return Err(CompilerError::CodeGen(
                 "comprimento() expects exactly 1 argument".to_string()
@@ -671,7 +671,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(length_value)
     }
 
-    fn generate_maiuscula_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_maiuscula_call(&mut self, args: &[Expressoes]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         if args.len() != 1 {
             return Err(CompilerError::CodeGen(
                 "maiuscula() expects exactly 1 argument".to_string()
@@ -824,7 +824,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(buffer.into())
     }
 
-    fn generate_minuscula_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_minuscula_call(&mut self, args: &[Expressoes]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         if args.len() != 1 {
             return Err(CompilerError::CodeGen(
                 "minuscula() expects exactly 1 argument".to_string()
@@ -977,7 +977,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(buffer.into())
     }
 
-    fn generate_absoluto_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_absoluto_call(&mut self, args: &[Expressoes]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         if args.len() != 1 {
             return Err(CompilerError::CodeGen(
                 "absoluto() expects exactly 1 argument".to_string()
@@ -998,7 +998,7 @@ impl<'ctx> CodeGen<'ctx> {
             .ok_or_else(|| CompilerError::CodeGen("Failed to get result from absoluto".to_string()))
     }
 
-    fn generate_potencia_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_potencia_call(&mut self, args: &[Expressoes]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         if args.len() != 2 {
             return Err(CompilerError::CodeGen(
                 "potencia() expects exactly 2 arguments".to_string()
@@ -1020,7 +1020,7 @@ impl<'ctx> CodeGen<'ctx> {
             .ok_or_else(|| CompilerError::CodeGen("Failed to get result from potencia".to_string()))
     }
 
-    fn generate_raiz_quadrada_call(&mut self, args: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_raiz_quadrada_call(&mut self, args: &[Expressoes]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         if args.len() != 1 {
             return Err(CompilerError::CodeGen(
                 "raiz_quadrada() expects exactly 1 argument".to_string()
@@ -1300,8 +1300,8 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(final_result)
     }
     
-    fn generate_increment_decrement(&mut self, operand: &Expr, is_increment: bool, prefix: bool) -> Result<BasicValueEnum<'ctx>, CompilerError> {
-        if let Expr::Identifier(name) = operand {
+    fn generate_increment_decrement(&mut self, operand: &Expressoes, is_increment: bool, prefix: bool) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        if let Expressoes::Identificador(name) = operand {
             if let Some(&(var_ptr, var_type)) = self.variables.get(name) {
                 match var_type {
                     VariableType::Int(_) => {
@@ -1353,7 +1353,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn generate_array_literal(&mut self, elements: &[Expr]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_array_literal(&mut self, elements: &[Expressoes]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         let array_size = elements.len();
         let size_value = self.i64_type.const_int(array_size as u64, false);
 
@@ -1401,7 +1401,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(array_ptr.into())
     }
 
-    fn generate_array_index(&mut self, array: &Expr, index: &Expr) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_array_index(&mut self, array: &Expressoes, index: &Expressoes) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         let array_val = self.generate_expression(array)?;
         let index_val = self.generate_expression(index)?;
 
@@ -1429,7 +1429,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(element_val)
     }
 
-    fn generate_object_literal(&mut self, properties: &[(String, Expr)]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_object_literal(&mut self, properties: &[(String, Expressoes)]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         let obj_size = properties.len();
 
         let total_size = self.i64_type.const_int(((obj_size * 2 + 1) * 8) as u64, false);
@@ -1497,7 +1497,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(obj_ptr.into())
     }
 
-    fn generate_property_access(&mut self, object: &Expr, property: &str) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_property_access(&mut self, object: &Expressoes, property: &str) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         let obj_val = self.generate_expression(object)?;
         let obj_ptr = obj_val.into_pointer_value();
 
@@ -1558,7 +1558,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(found_val.into())
     }
 
-    fn generate_if_statement(&mut self, condition: &Expr, then_branch: &[Statement], else_branch: Option<&Vec<Statement>>) -> Result<(), CompilerError> {
+    fn generate_if_statement(&mut self, condition: &Expressoes, then_branch: &[Declaracao], else_branch: Option<&Vec<Declaracao>>) -> Result<(), CompilerError> {
         let condition_val = self.generate_expression(condition)?;
         let condition_bool = self.value_to_bool(condition_val, "if_condition")?;
 
@@ -1604,7 +1604,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn generate_if_else_if_statement(&mut self, condition: &Expr, then_branch: &[Statement], else_if_branches: &[(Expr, Vec<Statement>)], else_branch: Option<&Vec<Statement>>) -> Result<(), CompilerError> {
+    fn generate_if_else_if_statement(&mut self, condition: &Expressoes, then_branch: &[Declaracao], else_if_branches: &[(Expressoes, Vec<Declaracao>)], else_branch: Option<&Vec<Declaracao>>) -> Result<(), CompilerError> {
         let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
 
         let condition_val = self.generate_expression(condition)?;
@@ -1706,7 +1706,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn generate_switch_statement(&mut self, _value: &Expr, cases: &[(Expr, Vec<Statement>)], default: Option<&Vec<Statement>>) -> Result<(), CompilerError> {
+    fn generate_switch_statement(&mut self, _value: &Expressoes, cases: &[(Expressoes, Vec<Declaracao>)], default: Option<&Vec<Declaracao>>) -> Result<(), CompilerError> {
         if let Some((first_case_val, first_case_stmts)) = cases.first() {
             let mut else_stmts = Vec::new();
             
@@ -1723,7 +1723,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn generate_while_statement(&mut self, condition: &Expr, body: &[Statement]) -> Result<(), CompilerError> {
+    fn generate_while_statement(&mut self, condition: &Expressoes, body: &[Declaracao]) -> Result<(), CompilerError> {
         let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
         
         let loop_bb = self.context.append_basic_block(current_function, "loop");
@@ -1763,7 +1763,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn generate_do_while_statement(&mut self, body: &[Statement], condition: &Expr) -> Result<(), CompilerError> {
+    fn generate_do_while_statement(&mut self, body: &[Declaracao], condition: &Expressoes) -> Result<(), CompilerError> {
         let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
         
         let body_bb = self.context.append_basic_block(current_function, "do_body");
@@ -1803,7 +1803,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn generate_for_statement(&mut self, initializer: Option<&Statement>, condition: Option<&Expr>, increment: Option<&Expr>, body: &[Statement]) -> Result<(), CompilerError> {
+    fn generate_for_statement(&mut self, initializer: Option<&Declaracao>, condition: Option<&Expressoes>, increment: Option<&Expressoes>, body: &[Declaracao]) -> Result<(), CompilerError> {
         let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
         
         let init_bb = self.context.append_basic_block(current_function, "for_init");
@@ -1861,7 +1861,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn generate_for_each_statement(&mut self, _variable: &str, _iterable: &Expr, _body: &[Statement]) -> Result<(), CompilerError> {
+    fn generate_for_each_statement(&mut self, _variable: &str, _iterable: &Expressoes, _body: &[Declaracao]) -> Result<(), CompilerError> {
         Ok(())
     }
 
@@ -1893,7 +1893,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn generate_function_declaration(&mut self, name: Option<&String>, params: &Vec<String>, body: &Vec<Statement>) -> Result<(), CompilerError> {
+    fn generate_function_declaration(&mut self, name: Option<&String>, params: &Vec<String>, body: &Vec<Declaracao>) -> Result<(), CompilerError> {
         if let Some(name) = name {
             let param_types = vec![self.i64_type.into(); params.len()];
             let fn_type = self.i64_type.fn_type(&param_types, false);
@@ -1923,7 +1923,7 @@ impl<'ctx> CodeGen<'ctx> {
                 self.generate_statement(stmt)?;
             }
 
-            if !body.iter().any(|stmt| matches!(stmt, Statement::Return(_))) {
+            if !body.iter().any(|stmt| matches!(stmt, Declaracao::Return(_))) {
                 self.builder.build_return(Some(&self.i64_type.const_int(0, false)))
                     .map_err(|e| CompilerError::CodeGen(format!("Error building return: {:?}", e)))?;
             }
@@ -1937,7 +1937,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn generate_return_statement(&mut self, value: Option<&Expr>) -> Result<(), CompilerError> {
+    fn generate_return_statement(&mut self, value: Option<&Expressoes>) -> Result<(), CompilerError> {
         if let Some(expr) = value {
             let val = self.generate_expression(expr)?;
             match val {
@@ -1954,7 +1954,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(())
     }
 
-    fn generate_anonymous_function(&mut self, params: &[String], body: &[Statement]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_anonymous_function(&mut self, params: &[String], body: &[Declaracao]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         static mut COUNTER: u32 = 0;
         unsafe {
             COUNTER += 1;
@@ -1987,7 +1987,7 @@ impl<'ctx> CodeGen<'ctx> {
             self.generate_statement(stmt)?;
         }
 
-        if !body.iter().any(|stmt| matches!(stmt, Statement::Return(_))) {
+        if !body.iter().any(|stmt| matches!(stmt, Declaracao::Return(_))) {
             self.builder.build_return(Some(&self.i64_type.const_int(0, false)))
                 .map_err(|e| CompilerError::CodeGen(format!("Error building return: {:?}", e)))?;
         }
@@ -2005,7 +2005,7 @@ impl<'ctx> CodeGen<'ctx> {
 mod tests {
     use super::*;
     use crate::core::lexer::Lexador;
-    use crate::core::parser::Parser;
+    use crate::core::parser::AnaliseSintatica;
 
     #[test]
     fn test_simple_variable() {
@@ -2014,8 +2014,8 @@ mod tests {
 
         let mut lexer = Lexador::new();
         let tokens = lexer.analisar("var a = 42;");
-        let mut parser = Parser::new(tokens);
-        let program = parser.parse().unwrap();
+        let mut parser = AnaliseSintatica::new(tokens);
+        let program = parser.analisar().unwrap();
 
         assert!(codegen.generate(&program).is_ok());
 
@@ -2031,8 +2031,8 @@ mod tests {
 
         let mut lexer = Lexador::new();
         let tokens = lexer.analisar("var a = 10; var b = 5; var c = 2; var result = a + b * c;");
-        let mut parser = Parser::new(tokens);
-        let program = parser.parse().unwrap();
+        let mut parser = AnaliseSintatica::new(tokens);
+        let program = parser.analisar().unwrap();
 
         assert!(codegen.generate(&program).is_ok());
 
@@ -2048,8 +2048,8 @@ mod tests {
 
         let mut lexer = Lexador::new();
         let tokens = lexer.analisar("var msg = \"Hello World\";");
-        let mut parser = Parser::new(tokens);
-        let program = parser.parse().unwrap();
+        let mut parser = AnaliseSintatica::new(tokens);
+        let program = parser.analisar().unwrap();
 
         assert!(codegen.generate(&program).is_ok());
 
@@ -2070,8 +2070,8 @@ mod tests {
             escreva("Resultado: " + texto(soma));
         "#;
         let tokens = lexer.analisar(code);
-        let mut parser = Parser::new(tokens);
-        let program = parser.parse().unwrap();
+        let mut parser = AnaliseSintatica::new(tokens);
+        let program = parser.analisar().unwrap();
 
         assert!(codegen.generate(&program).is_ok());
 
@@ -2089,8 +2089,8 @@ mod tests {
 
         let mut lexer = Lexador::new();
         let tokens = lexer.analisar("var arr = [1, 2, 3];");
-        let mut parser = Parser::new(tokens);
-        let program = parser.parse().unwrap();
+        let mut parser = AnaliseSintatica::new(tokens);
+        let program = parser.analisar().unwrap();
 
         let result = codegen.generate(&program);
         if let Err(ref e) = result {
@@ -2110,8 +2110,8 @@ mod tests {
 
         let mut lexer = Lexador::new();
         let tokens = lexer.analisar("var arr = [10, 20, 30]; var x = arr[1];");
-        let mut parser = Parser::new(tokens);
-        let program = parser.parse().unwrap();
+        let mut parser = AnaliseSintatica::new(tokens);
+        let program = parser.analisar().unwrap();
 
         assert!(codegen.generate(&program).is_ok());
 
@@ -2127,8 +2127,8 @@ mod tests {
 
         let mut lexer = Lexador::new();
         let tokens = lexer.analisar("var arr = [];");
-        let mut parser = Parser::new(tokens);
-        let program = parser.parse().unwrap();
+        let mut parser = AnaliseSintatica::new(tokens);
+        let program = parser.analisar().unwrap();
 
         assert!(codegen.generate(&program).is_ok());
 
@@ -2143,8 +2143,8 @@ mod tests {
 
         let mut lexer = Lexador::new();
         let tokens = lexer.analisar("var a = 5; var b = 10; var arr = [a + b, a * b];");
-        let mut parser = Parser::new(tokens);
-        let program = parser.parse().unwrap();
+        let mut parser = AnaliseSintatica::new(tokens);
+        let program = parser.analisar().unwrap();
 
         assert!(codegen.generate(&program).is_ok());
 

@@ -3,7 +3,7 @@ use std::process::Command;
 use inkwell::context::Context;
 
 use crate::core::lexer::Lexador;
-use crate::core::parser::Parser;
+use crate::core::parser::AnaliseSintatica;
 use crate::core::codegen::CodeGen;
 use crate::core::error::CompilerError;
 
@@ -15,8 +15,8 @@ pub fn compile_file(filename: &str) -> Result<(), CompilerError> {
 
     let mut lexer = Lexador::new();
     let tokens = lexer.analisar(&source_code);
-    let mut parser = Parser::new(tokens);
-    let ast = parser.parse()?;
+    let mut parser = AnaliseSintatica::new(tokens);
+    let ast = parser.analisar()?;
 
     let context = Context::create();
     let mut codegen = CodeGen::new(&context, "program")?;
@@ -75,8 +75,8 @@ mod tests {
 
         let mut lexer = Lexador::new();
         let tokens = lexer.analisar(test_code);
-        let mut parser = Parser::new(tokens);
-        let ast = parser.parse().unwrap();
+        let mut parser = AnaliseSintatica::new(tokens);
+        let ast = parser.analisar().unwrap();
 
         assert_eq!(ast.statements.len(), 4);
 
