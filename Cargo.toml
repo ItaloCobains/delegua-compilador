@@ -1,9 +1,9 @@
 [package]
-name = "dc"
-version = "0.1.0"
+name = "delegua-compilador"
+version = "0.0.0"
 edition = "2021"
 authors = ["Italo Brito Brandão"]
-description = "A simple programming language compiler built with Rust and LLVM"
+description = "Um simples compilador para a linguagem Delegua"
 license = "MIT"
 
 [dependencies]
