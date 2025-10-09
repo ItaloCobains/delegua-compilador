@@ -9,5 +9,4 @@
 pub mod core;
 pub mod cli;
 pub mod modules;
-pub mod repl;
 pub mod compiler;
