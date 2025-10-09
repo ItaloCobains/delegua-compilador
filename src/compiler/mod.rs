@@ -2,9 +2,9 @@ use std::fs;
 use std::process::Command;
 use inkwell::context::Context;
 
-use delegua::lexer::Lexador;
-use delegua::parser::AnaliseSintatica;
-use delegua::codegen::CodeGen;
+use delegua::lexador::Lexador;
+use delegua::analise_sintatica::AnaliseSintatica;
+use delegua::gerador_de_codigo::CodeGen;
 use delegua::error::CompilerError;
 
 pub fn compile_file(filename: &str) -> Result<(), CompilerError> {

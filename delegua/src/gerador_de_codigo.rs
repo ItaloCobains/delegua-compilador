@@ -2004,8 +2004,8 @@ impl<'ctx> CodeGen<'ctx> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::lexer::Lexador;
-    use crate::parser::AnaliseSintatica;
+    use crate::lexador::Lexador;
+    use crate::analise_sintatica::AnaliseSintatica;
 
     #[test]
     fn test_simple_variable() {

@@ -1,7 +1,7 @@
 pub mod ast;
-pub mod token;
+pub mod simbolo;
 pub mod error;
-pub mod lexer;
-pub mod parser;
-pub mod codegen;
+pub mod lexador;
+pub mod analise_sintatica;
+pub mod gerador_de_codigo;
 pub mod modules;

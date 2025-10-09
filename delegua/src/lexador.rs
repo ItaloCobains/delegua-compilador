@@ -1,4 +1,4 @@
-use crate::token::{Simbolo, Posicao};
+use crate::simbolo::{Simbolo, Posicao};
 
 /// Reservatório de objetos `Posicao` reutilizáveis para otimizar a alocação de memória.
 /// 
