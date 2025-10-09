@@ -14,11 +14,3 @@ reedline = "0.35.0"
 tempfile = "3.0"
 criterion = { version = "0.5", features = ["html_reports"] }
 
-[[test]]
-name = "unit"
-path = "tests/unit/mod.rs"
-
-[[test]]
-name = "integration"
-path = "tests/integration/mod.rs"
-
