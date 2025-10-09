@@ -24,8 +24,8 @@ impl<'ctx> VariableType<'ctx> {
 }
 use std::collections::HashMap;
 
-use crate::core::ast::{Programa, Declaracao, Expressoes, OperacaoBinaria};
-use crate::core::error::CompilerError;
+use crate::ast::{Programa, Declaracao, Expressoes, OperacaoBinaria};
+use crate::error::CompilerError;
 use crate::modules::matematica::Matematica;
 
 pub struct CodeGen<'ctx> {
@@ -2004,8 +2004,8 @@ impl<'ctx> CodeGen<'ctx> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::lexer::Lexador;
-    use crate::core::parser::AnaliseSintatica;
+    use crate::lexer::Lexador;
+    use crate::parser::AnaliseSintatica;
 
     #[test]
     fn test_simple_variable() {

@@ -2,10 +2,10 @@ use std::fs;
 use std::process::Command;
 use inkwell::context::Context;
 
-use crate::core::lexer::Lexador;
-use crate::core::parser::AnaliseSintatica;
-use crate::core::codegen::CodeGen;
-use crate::core::error::CompilerError;
+use delegua::lexer::Lexador;
+use delegua::parser::AnaliseSintatica;
+use delegua::codegen::CodeGen;
+use delegua::error::CompilerError;
 
 pub fn compile_file(filename: &str) -> Result<(), CompilerError> {
     println!("Compilando {}...", filename);

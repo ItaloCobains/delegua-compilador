@@ -1,6 +1,6 @@
 use std::env;
 use std::process;
-use crate::core::error::CompilerError;
+use delegua::error::CompilerError;
 
 #[derive(Debug)]
 pub enum CompilerMode {

@@ -1,7 +1,7 @@
-use crate::core::token::Simbolo;
-use crate::core::ast::{Expressoes, OperacaoBinaria, Declaracao, Programa};
-use crate::core::error::CompilerError;
-use crate::core::token::Posicao;
+use crate::token::Simbolo;
+use crate::ast::{Expressoes, OperacaoBinaria, Declaracao, Programa};
+use crate::error::CompilerError;
+use crate::token::Posicao;
 
 /// Analisador sintático para a linguagem de programação Delegua.
 /// Recebe uma lista de tokens e produz uma árvore de sintaxe abstrata (AST).
@@ -1063,7 +1063,7 @@ impl<'a> AnaliseSintatica<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::lexer::Lexador;
+    use crate::lexer::Lexador;
 
     #[test]
     fn test_parse_variable_declaration() {
