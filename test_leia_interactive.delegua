@@ -1,9 +1,0 @@
-escreva("=== Programa Interativo ===");
-var nome = leia("Qual é o seu nome? ");
-var cidade = leia("De que cidade você é? ");
-
-escreva("Prazer em conhecê-lo, " + nome + "!");
-escreva("Que legal que você é de " + cidade + "!");
-
-var resposta = leia("Você gosta de programar? (sim/não): ");
-escreva("Sua resposta foi: " + resposta);

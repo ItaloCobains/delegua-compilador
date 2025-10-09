@@ -1,5 +1,0 @@
-importar "matematica";
-
-escreva("Testando apenas raiz quadrada:");
-escreva("Raiz quadrada de 4: " + texto(matematica.raiz_quadrada(4)));
-escreva("Raiz quadrada de 9: " + texto(matematica.raiz_quadrada(9)));

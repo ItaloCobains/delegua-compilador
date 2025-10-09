@@ -1,6 +1,0 @@
-escreva("Teste da função leia:");
-var nome = leia("Digite seu nome: ");
-escreva("Olá " + nome + "!");
-
-var idade_str = leia("Digite sua idade: ");
-escreva("Você digitou: " + idade_str);

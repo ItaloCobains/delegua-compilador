@@ -1,6 +1,0 @@
-funcao soma(a, b) {
-  retorna a + b;
-}
-
-var resultado = soma(5, 3);
-escreva("Resultado: " + texto(resultado));

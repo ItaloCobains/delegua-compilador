@@ -1,3 +1,0 @@
-var texto = "hello";
-var resultado = maiuscula(texto);
-escreva(resultado);

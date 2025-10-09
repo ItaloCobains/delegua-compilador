@@ -1,3 +1,0 @@
-// Test empty array
-var vazio = [];
-escreva("Array vazio criado com sucesso!");
