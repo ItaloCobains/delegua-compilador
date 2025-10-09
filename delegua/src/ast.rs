@@ -1,5 +1,5 @@
 #[derive(Debug, PartialEq, Clone)]
-pub enum Expressoes {
+pub enum Espressao {
     Numero(i64),
 
     Texto(String),
@@ -10,27 +10,27 @@ pub enum Expressoes {
 
     Unario {
         operador: OperacaoBinaria,
-        operando: Box<Expressoes>,
+        operando: Box<Espressao>,
     },
 
     Binario {
-        esquerda: Box<Expressoes>,
+        esquerda: Box<Espressao>,
         operador: OperacaoBinaria,
-        direita: Box<Expressoes>,
+        direita: Box<Espressao>,
     },
 
     ChamadaFuncao {
-        chamado: Box<Expressoes>,
-        argumentos: Vec<Expressoes>,
+        chamado: Box<Espressao>,
+        argumentos: Vec<Espressao>,
     },
     
     Incremento {
-        operando: Box<Expressoes>,
+        operando: Box<Espressao>,
         prefixo: bool, // true for ++x, false for x++
     },
     
     Decremento {
-        operando: Box<Expressoes>,
+        operando: Box<Espressao>,
         prefixo: bool, // true for --x, false for x--
     },
 
@@ -40,20 +40,20 @@ pub enum Expressoes {
     },
 
     Lista {
-        elementos: Vec<Expressoes>,
+        elementos: Vec<Espressao>,
     },
 
     Indice {
-        lista: Box<Expressoes>,
-        indice: Box<Expressoes>,
+        lista: Box<Espressao>,
+        indice: Box<Espressao>,
     },
 
     Objeto {
-        propriedades: Vec<(String, Expressoes)>,
+        propriedades: Vec<(String, Espressao)>,
     },
 
     PropriedadeAcesso {
-        objeto: Box<Expressoes>,
+        objeto: Box<Espressao>,
         propriedade: String,
     },
 }
@@ -69,12 +69,12 @@ pub enum OperacaoBinaria {
 pub enum Declaracao {
     Variavel {
         nome: String,
-        valor: Expressoes,
+        valor: Espressao,
     },
 
     Atribuicao {
         nome: String,
-        valor: Expressoes,
+        valor: Espressao,
     },
 
     Importacao {
@@ -83,44 +83,44 @@ pub enum Declaracao {
     },
 
     Se {
-        condicao: Expressoes,
+        condicao: Espressao,
         ramificacao_entao: Vec<Declaracao>,
         ramificacao_outro: Option<Vec<Declaracao>>,
     },
 
     SeSenao {
-        condicao: Expressoes,
+        condicao: Espressao,
         ramificacao_entao: Vec<Declaracao>,
-        ramificacao_se_outro: Vec<(Expressoes, Vec<Declaracao>)>,
+        ramificacao_se_outro: Vec<(Espressao, Vec<Declaracao>)>,
         ramificacao_outro: Option<Vec<Declaracao>>,
     },
 
     Selecao { // Switch
-        valor: Expressoes,
-        casos: Vec<(Expressoes, Vec<Declaracao>)>,
+        valor: Espressao,
+        casos: Vec<(Espressao, Vec<Declaracao>)>,
         padrao: Option<Vec<Declaracao>>,
     },
 
     Enquanto {
-        condicao: Expressoes,
+        condicao: Espressao,
         corpo: Vec<Declaracao>,
     },
 
     FacaEnquanto {
         corpo: Vec<Declaracao>,
-        condicao: Expressoes,
+        condicao: Espressao,
     },
 
     Para {
         inicializador: Option<Box<Declaracao>>,
-        condicao: Option<Expressoes>,
-        incremento: Option<Expressoes>,
+        condicao: Option<Espressao>,
+        incremento: Option<Espressao>,
         corpo: Vec<Declaracao>,
     },
 
     ParaCada {
         variavel: String,
-        iteravel: Expressoes,
+        iteravel: Espressao,
         corpo: Vec<Declaracao>,
     },
 
@@ -128,7 +128,7 @@ pub enum Declaracao {
 
     Continua,
 
-    ChamadaDeFuncao(Expressoes),
+    ChamadaDeFuncao(Espressao),
 
     DeclaracaoDeFuncao {
         nome: Option<String>,
@@ -136,7 +136,7 @@ pub enum Declaracao {
         corpo: Vec<Declaracao>,
     },
 
-    Retorna(Option<Expressoes>),
+    Retorna(Option<Espressao>),
 }
 
 #[derive(Debug, PartialEq, Clone)]

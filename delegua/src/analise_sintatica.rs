@@ -1,5 +1,5 @@
 use crate::simbolo::Simbolo;
-use crate::ast::{Expressoes, OperacaoBinaria, Declaracao, Programa};
+use crate::ast::{Espressao, OperacaoBinaria, Declaracao, Programa};
 use crate::error::CompilerError;
 use crate::simbolo::Posicao;
 
@@ -118,22 +118,22 @@ impl<'a> AnaliseSintatica<'a> {
             let args = self.resolve_argumentos()?;
             self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após os argumentos da função")?;
             self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a chamada da função")?;
-            Ok(Declaracao::ChamadaDeFuncao(Expressoes::ChamadaFuncao {
-                chamado: Box::new(Expressoes::Identificador(nome)),
+            Ok(Declaracao::ChamadaDeFuncao(Espressao::ChamadaFuncao {
+                chamado: Box::new(Espressao::Identificador(nome)),
                 argumentos: args,
             }))
         } else if matches!(self.simbolo_atual(), Simbolo::Incremento(_)) {
             self.avancar(); // consume ++
             self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após o incremento")?;
-            Ok(Declaracao::ChamadaDeFuncao(Expressoes::Incremento {
-                operando: Box::new(Expressoes::Identificador(nome)),
+            Ok(Declaracao::ChamadaDeFuncao(Espressao::Incremento {
+                operando: Box::new(Espressao::Identificador(nome)),
                 prefixo: false, // postfix: x++
             }))
         } else if matches!(self.simbolo_atual(), Simbolo::Decremento(_)) {
             self.avancar(); // consume --
             self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após o decremento")?;
-            Ok(Declaracao::ChamadaDeFuncao(Expressoes::Decremento {
-                operando: Box::new(Expressoes::Identificador(nome)),
+            Ok(Declaracao::ChamadaDeFuncao(Espressao::Decremento {
+                operando: Box::new(Espressao::Identificador(nome)),
                 prefixo: false, // postfix: x--
             }))
         } else {
@@ -155,13 +155,13 @@ impl<'a> AnaliseSintatica<'a> {
         self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após o incremento/decremento")?;
 
         if is_increment {
-            Ok(Declaracao::ChamadaDeFuncao(Expressoes::Incremento {
-                operando: Box::new(Expressoes::Identificador(nome)),
+            Ok(Declaracao::ChamadaDeFuncao(Espressao::Incremento {
+                operando: Box::new(Espressao::Identificador(nome)),
                 prefixo: true, // prefix: ++x
             }))
         } else {
-            Ok(Declaracao::ChamadaDeFuncao(Expressoes::Decremento {
-                operando: Box::new(Expressoes::Identificador(nome)),
+            Ok(Declaracao::ChamadaDeFuncao(Espressao::Decremento {
+                operando: Box::new(Espressao::Identificador(nome)),
                 prefixo: true, // prefix: --x
             }))
         }
@@ -212,10 +212,10 @@ impl<'a> AnaliseSintatica<'a> {
         }
     }
 
-    fn resolve_chamada_funcao(&mut self) -> Result<Expressoes, CompilerError> {
+    fn resolve_chamada_funcao(&mut self) -> Result<Espressao, CompilerError> {
         let callee = self.resolve_primario()?;
 
-        if let Expressoes::ChamadaFuncao { .. } = callee {
+        if let Espressao::ChamadaFuncao { .. } = callee {
             return Ok(callee);
         }
 
@@ -225,10 +225,10 @@ impl<'a> AnaliseSintatica<'a> {
 
         self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após os argumentos da função")?;
 
-        Ok(Expressoes::ChamadaFuncao { chamado: Box::new(callee), argumentos: args })
+        Ok(Espressao::ChamadaFuncao { chamado: Box::new(callee), argumentos: args })
     }
 
-    fn resolve_argumentos(&mut self) -> Result<Vec<Expressoes>, CompilerError> {
+    fn resolve_argumentos(&mut self) -> Result<Vec<Espressao>, CompilerError> {
         if matches!(self.simbolo_atual(), Simbolo::ParenteseDireito(_)) {
             return Ok(Vec::new());
         }
@@ -280,17 +280,17 @@ impl<'a> AnaliseSintatica<'a> {
         Ok(params)
     }
 
-    fn resolve_espressao(&mut self) -> Result<Expressoes, CompilerError> {
+    fn resolve_espressao(&mut self) -> Result<Espressao, CompilerError> {
         self.resolve_logico_ou()
     }
 
-    fn resolve_logico_ou(&mut self) -> Result<Expressoes, CompilerError> {
+    fn resolve_logico_ou(&mut self) -> Result<Espressao, CompilerError> {
         let mut left = self.resolve_logico_e()?;
 
         while matches!(self.simbolo_atual(), Simbolo::Ou(_)) {
             self.avancar();
             let right = self.resolve_logico_e()?;
-            left = Expressoes::Binario {
+            left = Espressao::Binario {
                 esquerda: Box::new(left),
                 operador: OperacaoBinaria::Ou,
                 direita: Box::new(right),
@@ -300,13 +300,13 @@ impl<'a> AnaliseSintatica<'a> {
         Ok(left)
     }
 
-    fn resolve_logico_e(&mut self) -> Result<Expressoes, CompilerError> {
+    fn resolve_logico_e(&mut self) -> Result<Espressao, CompilerError> {
         let mut left = self.resolve_comparacao()?;
 
         while matches!(self.simbolo_atual(), Simbolo::E(_)) {
             self.avancar();
             let right = self.resolve_comparacao()?;
-            left = Expressoes::Binario {
+            left = Espressao::Binario {
                 esquerda: Box::new(left),
                 operador: OperacaoBinaria::E,
                 direita: Box::new(right),
@@ -316,7 +316,7 @@ impl<'a> AnaliseSintatica<'a> {
         Ok(left)
     }
 
-    fn resolve_comparacao(&mut self) -> Result<Expressoes, CompilerError> {
+    fn resolve_comparacao(&mut self) -> Result<Espressao, CompilerError> {
         let mut left = self.resolve_aditiva()?;
 
         while matches!(self.simbolo_atual(), 
@@ -335,7 +335,7 @@ impl<'a> AnaliseSintatica<'a> {
             self.avancar();
 
             let right = self.resolve_aditiva()?;
-            left = Expressoes::Binario {
+            left = Espressao::Binario {
                 esquerda: Box::new(left),
                 operador: operator,
                 direita: Box::new(right),
@@ -345,7 +345,7 @@ impl<'a> AnaliseSintatica<'a> {
         Ok(left)
     }
 
-    fn resolve_aditiva(&mut self) -> Result<Expressoes, CompilerError> {
+    fn resolve_aditiva(&mut self) -> Result<Espressao, CompilerError> {
         let mut left = self.resolve_multiplacativa()?;
 
         while matches!(self.simbolo_atual(), Simbolo::Adicao(_) | Simbolo::Subtracao(_)) {
@@ -357,7 +357,7 @@ impl<'a> AnaliseSintatica<'a> {
             self.avancar();
 
             let right = self.resolve_multiplacativa()?;
-            left = Expressoes::Binario {
+            left = Espressao::Binario {
                 esquerda: Box::new(left),
                 operador: operator,
                 direita: Box::new(right),
@@ -367,7 +367,7 @@ impl<'a> AnaliseSintatica<'a> {
         Ok(left)
     }
 
-    fn resolve_multiplacativa(&mut self) -> Result<Expressoes, CompilerError> {
+    fn resolve_multiplacativa(&mut self) -> Result<Espressao, CompilerError> {
         let mut left = self.resolve_potencia()?;
 
         while matches!(self.simbolo_atual(), Simbolo::Multiplicacao(_) | Simbolo::Divisao(_) | Simbolo::Modulo(_)) {
@@ -380,7 +380,7 @@ impl<'a> AnaliseSintatica<'a> {
             self.avancar();
 
             let right = self.resolve_potencia()?;
-            left = Expressoes::Binario {
+            left = Espressao::Binario {
                 esquerda: Box::new(left),
                 operador: operator,
                 direita: Box::new(right),
@@ -390,14 +390,14 @@ impl<'a> AnaliseSintatica<'a> {
         Ok(left)
     }
     
-    fn resolve_potencia(&mut self) -> Result<Expressoes, CompilerError> {
+    fn resolve_potencia(&mut self) -> Result<Espressao, CompilerError> {
         let mut left = self.resolve_unario()?;
         
         // Right associative: 2**3**2 = 2**(3**2) = 512
         if matches!(self.simbolo_atual(), Simbolo::Potencia(_)) {
             self.avancar();
             let right = self.resolve_potencia()?; // Right associative recursion
-            left = Expressoes::Binario {
+            left = Espressao::Binario {
                 esquerda: Box::new(left),
                 operador: OperacaoBinaria::Potencia,
                 direita: Box::new(right),
@@ -407,7 +407,7 @@ impl<'a> AnaliseSintatica<'a> {
         Ok(left)
     }
 
-    fn resolve_unario(&mut self) -> Result<Expressoes, CompilerError> {
+    fn resolve_unario(&mut self) -> Result<Espressao, CompilerError> {
         match self.simbolo_atual() {
             Simbolo::Adicao(_) => {
                 self.avancar();
@@ -416,7 +416,7 @@ impl<'a> AnaliseSintatica<'a> {
             Simbolo::Subtracao(_) => {
                 self.avancar();
                 let operand = self.resolve_unario()?;
-                Ok(Expressoes::Unario {
+                Ok(Espressao::Unario {
                     operador: OperacaoBinaria::Subtracao,
                     operando: Box::new(operand),
                 })
@@ -424,7 +424,7 @@ impl<'a> AnaliseSintatica<'a> {
             Simbolo::Nao(_) => {
                 self.avancar();
                 let operand = self.resolve_unario()?;
-                Ok(Expressoes::Unario {
+                Ok(Espressao::Unario {
                     operador: OperacaoBinaria::Nao,
                     operando: Box::new(operand),
                 })
@@ -432,7 +432,7 @@ impl<'a> AnaliseSintatica<'a> {
             Simbolo::Incremento(_) => {
                 self.avancar();
                 let operand = self.resolve_pos_fixado()?;
-                Ok(Expressoes::Incremento {
+                Ok(Espressao::Incremento {
                     operando: Box::new(operand),
                     prefixo: true,
                 })
@@ -440,7 +440,7 @@ impl<'a> AnaliseSintatica<'a> {
             Simbolo::Decremento(_) => {
                 self.avancar();
                 let operand = self.resolve_pos_fixado()?;
-                Ok(Expressoes::Decremento {
+                Ok(Espressao::Decremento {
                     operando: Box::new(operand),
                     prefixo: true,
                 })
@@ -449,21 +449,21 @@ impl<'a> AnaliseSintatica<'a> {
         }
     }
     
-    fn resolve_pos_fixado(&mut self) -> Result<Expressoes, CompilerError> {
+    fn resolve_pos_fixado(&mut self) -> Result<Espressao, CompilerError> {
         let mut expr = self.resolve_primario()?;
         
         loop {
             match self.simbolo_atual() {
                 Simbolo::Incremento(_) => {
                     self.avancar();
-                    expr = Expressoes::Incremento {
+                    expr = Espressao::Incremento {
                         operando: Box::new(expr),
                         prefixo: false,
                     };
                 }
                 Simbolo::Decremento(_) => {
                     self.avancar();
-                    expr = Expressoes::Decremento {
+                    expr = Espressao::Decremento {
                         operando: Box::new(expr),
                         prefixo: false,
                     };
@@ -472,7 +472,7 @@ impl<'a> AnaliseSintatica<'a> {
                     self.avancar();
                     let index = self.resolve_espressao()?;
                     self.consumir(Self::simbolo_com_posicao(Simbolo::ColcheteDireito), "Expected ']' after array index")?;
-                    expr = Expressoes::Indice {
+                    expr = Espressao::Indice {
                         lista: Box::new(expr),
                         indice: Box::new(index),
                     };
@@ -482,7 +482,7 @@ impl<'a> AnaliseSintatica<'a> {
                     if let Simbolo::Identificador(name, _) = self.simbolo_atual() {
                         let property = name.to_string();
                         self.avancar();
-                        expr = Expressoes::PropriedadeAcesso {
+                        expr = Espressao::PropriedadeAcesso {
                             objeto: Box::new(expr),
                             propriedade: property,
                         };
@@ -497,36 +497,36 @@ impl<'a> AnaliseSintatica<'a> {
         Ok(expr)
     }
 
-    fn resolve_primario(&mut self) -> Result<Expressoes, CompilerError> {
+    fn resolve_primario(&mut self) -> Result<Espressao, CompilerError> {
         match *self.simbolo_atual() {
             Simbolo::Number(n, _) => {
                 self.avancar();
-                Ok(Expressoes::Numero(n))
+                Ok(Espressao::Numero(n))
             }
             Simbolo::Texto(ref s, _) => {
                 let s = s.to_string();
                 self.avancar();
-                Ok(Expressoes::Texto(s))
+                Ok(Espressao::Texto(s))
             }
             Simbolo::Verdadeiro(_) => {
                 self.avancar();
-                Ok(Expressoes::Logico(true))
+                Ok(Espressao::Logico(true))
             }
             Simbolo::Falso(_) => {
                 self.avancar();
-                Ok(Expressoes::Logico(false))
+                Ok(Espressao::Logico(false))
             }
             Simbolo::Escreva(_) => {
                 self.avancar();
                 if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
                     let args = self.resolve_argumentos()?;
                     self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
-                    Ok(Expressoes::ChamadaFuncao {
-                        chamado: Box::new(Expressoes::Identificador("escreva".to_string())),
+                    Ok(Espressao::ChamadaFuncao {
+                        chamado: Box::new(Espressao::Identificador("escreva".to_string())),
                         argumentos: args,
                     })
                 } else {
-                    Ok(Expressoes::Identificador("escreva".to_string()))
+                    Ok(Espressao::Identificador("escreva".to_string()))
                 }
             }
             Simbolo::Identificador(name, _) => {
@@ -536,12 +536,12 @@ impl<'a> AnaliseSintatica<'a> {
                 if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
                     let args = self.resolve_argumentos()?;
                     self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
-                    Ok(Expressoes::ChamadaFuncao {
-                        chamado: Box::new(Expressoes::Identificador(name)),
+                    Ok(Espressao::ChamadaFuncao {
+                        chamado: Box::new(Espressao::Identificador(name)),
                         argumentos: args,
                     })
                 } else {
-                    Ok(Expressoes::Identificador(name))
+                    Ok(Espressao::Identificador(name))
                 }
             }
             Simbolo::Funcao(_) => {
@@ -551,20 +551,20 @@ impl<'a> AnaliseSintatica<'a> {
                 self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após parâmetros")?;
                 self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Esperado '{' após assinatura da função")?;
                 let body = self.resolve_bloco()?;
-                Ok(Expressoes::Funcao { paramentros: params, corpo: body })
+                Ok(Espressao::Funcao { paramentros: params, corpo: body })
             }
             Simbolo::TextoFuncao(_) => {
                 self.avancar();
                 if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
                     let args = self.resolve_argumentos()?;
                     self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
-                    Ok(Expressoes::ChamadaFuncao {
-                        chamado: Box::new(Expressoes::Identificador("texto".to_string())),
+                    Ok(Espressao::ChamadaFuncao {
+                        chamado: Box::new(Espressao::Identificador("texto".to_string())),
                         argumentos: args,
                     })
                 } else {
                     // Treat as variable identifier
-                    Ok(Expressoes::Identificador("texto".to_string()))
+                    Ok(Espressao::Identificador("texto".to_string()))
                 }
             }
             Simbolo::Leia(_) => {
@@ -572,12 +572,12 @@ impl<'a> AnaliseSintatica<'a> {
                 if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
                     let args = self.resolve_argumentos()?;
                     self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
-                    Ok(Expressoes::ChamadaFuncao {
-                        chamado: Box::new(Expressoes::Identificador("leia".to_string())),
+                    Ok(Espressao::ChamadaFuncao {
+                        chamado: Box::new(Espressao::Identificador("leia".to_string())),
                         argumentos: args,
                     })
                 } else {
-                    Ok(Expressoes::Identificador("leia".to_string()))
+                    Ok(Espressao::Identificador("leia".to_string()))
                 }
             }
             Simbolo::Comprimento(_) => {
@@ -585,12 +585,12 @@ impl<'a> AnaliseSintatica<'a> {
                 if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
                     let args = self.resolve_argumentos()?;
                     self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
-                    Ok(Expressoes::ChamadaFuncao {
-                        chamado: Box::new(Expressoes::Identificador("comprimento".to_string())),
+                    Ok(Espressao::ChamadaFuncao {
+                        chamado: Box::new(Espressao::Identificador("comprimento".to_string())),
                         argumentos: args,
                     })
                 } else {
-                    Ok(Expressoes::Identificador("comprimento".to_string()))
+                    Ok(Espressao::Identificador("comprimento".to_string()))
                 }
             }
             Simbolo::Maiuscula(_) => {
@@ -598,12 +598,12 @@ impl<'a> AnaliseSintatica<'a> {
                 if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
                     let args = self.resolve_argumentos()?;
                     self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
-                    Ok(Expressoes::ChamadaFuncao {
-                        chamado: Box::new(Expressoes::Identificador("maiuscula".to_string())),
+                    Ok(Espressao::ChamadaFuncao {
+                        chamado: Box::new(Espressao::Identificador("maiuscula".to_string())),
                         argumentos: args,
                     })
                 } else {
-                    Ok(Expressoes::Identificador("maiuscula".to_string()))
+                    Ok(Espressao::Identificador("maiuscula".to_string()))
                 }
             }
             Simbolo::Minuscula(_) => {
@@ -611,12 +611,12 @@ impl<'a> AnaliseSintatica<'a> {
                 if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
                     let args = self.resolve_argumentos()?;
                     self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
-                    Ok(Expressoes::ChamadaFuncao {
-                        chamado: Box::new(Expressoes::Identificador("minuscula".to_string())),
+                    Ok(Espressao::ChamadaFuncao {
+                        chamado: Box::new(Espressao::Identificador("minuscula".to_string())),
                         argumentos: args,
                     })
                 } else {
-                    Ok(Expressoes::Identificador("minuscula".to_string()))
+                    Ok(Espressao::Identificador("minuscula".to_string()))
                 }
             }
             Simbolo::Absoluto(_) => {
@@ -624,12 +624,12 @@ impl<'a> AnaliseSintatica<'a> {
                 if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
                     let args = self.resolve_argumentos()?;
                     self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
-                    Ok(Expressoes::ChamadaFuncao {
-                        chamado: Box::new(Expressoes::Identificador("absoluto".to_string())),
+                    Ok(Espressao::ChamadaFuncao {
+                        chamado: Box::new(Espressao::Identificador("absoluto".to_string())),
                         argumentos: args,
                     })
                 } else {
-                    Ok(Expressoes::Identificador("absoluto".to_string()))
+                    Ok(Espressao::Identificador("absoluto".to_string()))
                 }
             }
             Simbolo::PotenciaFuncao(_) => {
@@ -637,12 +637,12 @@ impl<'a> AnaliseSintatica<'a> {
                 if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
                     let args = self.resolve_argumentos()?;
                     self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
-                    Ok(Expressoes::ChamadaFuncao {
-                        chamado: Box::new(Expressoes::Identificador("potencia".to_string())),
+                    Ok(Espressao::ChamadaFuncao {
+                        chamado: Box::new(Espressao::Identificador("potencia".to_string())),
                         argumentos: args,
                     })
                 } else {
-                    Ok(Expressoes::Identificador("potencia".to_string()))
+                    Ok(Espressao::Identificador("potencia".to_string()))
                 }
             }
             Simbolo::RaizQuadrada(_) => {
@@ -650,12 +650,12 @@ impl<'a> AnaliseSintatica<'a> {
                 if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
                     let args = self.resolve_argumentos()?;
                     self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
-                    Ok(Expressoes::ChamadaFuncao {
-                        chamado: Box::new(Expressoes::Identificador("raiz_quadrada".to_string())),
+                    Ok(Espressao::ChamadaFuncao {
+                        chamado: Box::new(Espressao::Identificador("raiz_quadrada".to_string())),
                         argumentos: args,
                     })
                 } else {
-                    Ok(Expressoes::Identificador("raiz_quadrada".to_string()))
+                    Ok(Espressao::Identificador("raiz_quadrada".to_string()))
                 }
             }
             Simbolo::ParenteseEsquerdo(_) => {
@@ -681,7 +681,7 @@ impl<'a> AnaliseSintatica<'a> {
                 }
 
                 self.consumir(Self::simbolo_com_posicao(Simbolo::ColcheteDireito), "Esperado ']' após elementos da lista")?;
-                Ok(Expressoes::Lista { elementos: elements })
+                Ok(Espressao::Lista { elementos: elements })
             }
             Simbolo::ChaveEsquerda(_) => {
                 self.avancar();
@@ -716,7 +716,7 @@ impl<'a> AnaliseSintatica<'a> {
                 }
 
                 self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveDireita), "Esperado '}' após propriedades do objeto")?;
-                Ok(Expressoes::Objeto { propriedades: properties })
+                Ok(Espressao::Objeto { propriedades: properties })
             }
             _ => Err(CompilerError::Parser(format!(
                 "Token inesperado na expressão: {:?}", self.simbolo_atual()
@@ -1077,7 +1077,7 @@ mod tests {
         match &program.declaracoes[0] {
             Declaracao::Variavel { nome: name, valor: value } => {
                 assert_eq!(name, "x");
-                assert_eq!(*value, Expressoes::Numero(42));
+                assert_eq!(*value, Espressao::Numero(42));
             }
             _ => panic!("Expected variable declaration"),
         }

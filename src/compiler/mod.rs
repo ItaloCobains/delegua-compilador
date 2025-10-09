@@ -4,7 +4,7 @@ use inkwell::context::Context;
 
 use delegua::lexador::Lexador;
 use delegua::analise_sintatica::AnaliseSintatica;
-use delegua::gerador_de_codigo::CodeGen;
+use delegua::gerador_de_codigo::GeradorDeCodigo;
 use delegua::error::CompilerError;
 
 pub fn compile_file(filename: &str) -> Result<(), CompilerError> {
@@ -19,8 +19,8 @@ pub fn compile_file(filename: &str) -> Result<(), CompilerError> {
     let ast = parser.analisar()?;
 
     let context = Context::create();
-    let mut codegen = CodeGen::new(&context, "program")?;
-    codegen.generate(&ast)?;
+    let mut codegen = GeradorDeCodigo::new(&context, "program")?;
+    codegen.gerar(&ast)?;
 
     let ir_filename = format!("{}.ll", filename.trim_end_matches(".delegua"));
     fs::write(&ir_filename, codegen.get_ir())
