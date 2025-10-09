@@ -101,45 +101,45 @@ pub enum Declaracao {
         padrao: Option<Vec<Declaracao>>,
     },
 
-    While {
-        condition: Expressoes,
-        body: Vec<Declaracao>,
+    Enquanto {
+        condicao: Expressoes,
+        corpo: Vec<Declaracao>,
     },
 
-    DoWhile {
-        body: Vec<Declaracao>,
-        condition: Expressoes,
+    FacaEnquanto {
+        corpo: Vec<Declaracao>,
+        condicao: Expressoes,
     },
 
-    For {
-        initializer: Option<Box<Declaracao>>,
-        condition: Option<Expressoes>,
-        increment: Option<Expressoes>,
-        body: Vec<Declaracao>,
+    Para {
+        inicializador: Option<Box<Declaracao>>,
+        condicao: Option<Expressoes>,
+        incremento: Option<Expressoes>,
+        corpo: Vec<Declaracao>,
     },
 
-    ForEach {
-        variable: String,
-        iterable: Expressoes,
-        body: Vec<Declaracao>,
+    ParaCada {
+        variavel: String,
+        iteravel: Expressoes,
+        corpo: Vec<Declaracao>,
     },
 
-    Break,
+    Interromper,
 
     Continue,
 
-    FunctionCall(Expressoes),
+    ChamadaDeFuncao(Expressoes),
 
-    FunctionDeclaration {
-        name: Option<String>,
-        params: Vec<String>,
-        body: Vec<Declaracao>,
+    DeclaracaoDeFuncao {
+        nome: Option<String>,
+        parametros: Vec<String>,
+        corpo: Vec<Declaracao>,
     },
 
-    Return(Option<Expressoes>),
+    Retorna(Option<Expressoes>),
 }
 
 #[derive(Debug, PartialEq, Clone)]
-pub struct Program {
-    pub statements: Vec<Declaracao>,
+pub struct Programa {
+    pub declaracoes: Vec<Declaracao>,
 }

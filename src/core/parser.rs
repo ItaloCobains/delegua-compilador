@@ -1,5 +1,5 @@
 use crate::core::token::Simbolo;
-use crate::core::ast::{Expressoes, OperacaoBinaria, Declaracao, Program};
+use crate::core::ast::{Expressoes, OperacaoBinaria, Declaracao, Programa};
 use crate::core::error::CompilerError;
 use crate::core::token::Posicao;
 
@@ -37,7 +37,7 @@ impl<'a> AnaliseSintatica<'a> {
         Simbolo::Identificador(s, Posicao { linha: 0, coluna: 0, deslocamento: 0 })
     }
 
-    pub fn analisar(&mut self) -> Result<Program, CompilerError> {
+    pub fn analisar(&mut self) -> Result<Programa, CompilerError> {
         let mut declaracoes = Vec::new();
         let mut errors = Vec::new();
 
@@ -61,7 +61,7 @@ impl<'a> AnaliseSintatica<'a> {
             return Err(errors.into_iter().next().unwrap());
         }
 
-        Ok(Program { statements: declaracoes })
+        Ok(Programa { declaracoes })
     }
 
     fn resolve_declaracao(&mut self) -> Result<Declaracao, CompilerError> {
@@ -118,21 +118,21 @@ impl<'a> AnaliseSintatica<'a> {
             let args = self.parse_arguments()?;
             self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Expected ')' after function arguments")?;
             self.consume(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Expected ';' after function call")?;
-            Ok(Declaracao::FunctionCall(Expressoes::ChamadaFuncao {
+            Ok(Declaracao::ChamadaDeFuncao(Expressoes::ChamadaFuncao {
                 chamado: Box::new(Expressoes::Identificador(name)),
                 argumentos: args,
             }))
         } else if matches!(self.current_token(), Simbolo::Incremento(_)) {
             self.advance(); // consume ++
             self.consume(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Expected ';' after increment")?;
-            Ok(Declaracao::FunctionCall(Expressoes::Incremento {
+            Ok(Declaracao::ChamadaDeFuncao(Expressoes::Incremento {
                 operando: Box::new(Expressoes::Identificador(name)),
                 prefixo: false, // postfix: x++
             }))
         } else if matches!(self.current_token(), Simbolo::Decremento(_)) {
             self.advance(); // consume --
             self.consume(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Expected ';' after decrement")?;
-            Ok(Declaracao::FunctionCall(Expressoes::Decremento {
+            Ok(Declaracao::ChamadaDeFuncao(Expressoes::Decremento {
                 operando: Box::new(Expressoes::Identificador(name)),
                 prefixo: false, // postfix: x--
             }))
@@ -155,12 +155,12 @@ impl<'a> AnaliseSintatica<'a> {
         self.consume(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Expected ';' after prefix increment/decrement")?;
         
         if is_increment {
-            Ok(Declaracao::FunctionCall(Expressoes::Incremento {
+            Ok(Declaracao::ChamadaDeFuncao(Expressoes::Incremento {
                 operando: Box::new(Expressoes::Identificador(name)),
                 prefixo: true, // prefix: ++x
             }))
         } else {
-            Ok(Declaracao::FunctionCall(Expressoes::Decremento {
+            Ok(Declaracao::ChamadaDeFuncao(Expressoes::Decremento {
                 operando: Box::new(Expressoes::Identificador(name)),
                 prefixo: true, // prefix: --x
             }))
@@ -170,7 +170,7 @@ impl<'a> AnaliseSintatica<'a> {
     fn parse_function_call_statement(&mut self) -> Result<Declaracao, CompilerError> {
         let expr = self.parse_function_call()?;
         self.consume(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Expected ';' after function call")?;
-        Ok(Declaracao::FunctionCall(expr))
+        Ok(Declaracao::ChamadaDeFuncao(expr))
     }
 
     fn parse_import_statement(&mut self) -> Result<Declaracao, CompilerError> {
@@ -932,7 +932,7 @@ impl<'a> AnaliseSintatica<'a> {
         self.consume(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Expected '{' after condition")?;
         let body = self.parse_block()?;
 
-        Ok(Declaracao::While { condition, body })
+        Ok(Declaracao::Enquanto { condicao: condition, corpo: body })
     }
 
     fn parse_do_while_statement(&mut self) -> Result<Declaracao, CompilerError> {
@@ -942,7 +942,7 @@ impl<'a> AnaliseSintatica<'a> {
         self.consume(Self::simbolo_com_posicao(Simbolo::Enquanto), "Expected 'enquanto' after do block")?;
         let condition = self.parse_expression()?;
 
-        Ok(Declaracao::DoWhile { body, condition })
+        Ok(Declaracao::FacaEnquanto { corpo: body, condicao: condition })
     }
 
     fn parse_for_statement(&mut self) -> Result<Declaracao, CompilerError> {
@@ -985,7 +985,7 @@ impl<'a> AnaliseSintatica<'a> {
         self.consume(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Expected '{' after for header")?;
         let body = self.parse_block()?;
 
-        Ok(Declaracao::For { initializer, condition, increment, body })
+        Ok(Declaracao::Para { inicializador: initializer, condicao: condition, incremento: increment, corpo: body })
     }
 
     fn parse_for_each_statement(&mut self) -> Result<Declaracao, CompilerError> {
@@ -996,12 +996,12 @@ impl<'a> AnaliseSintatica<'a> {
         self.consume(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Expected '{' after iterable")?;
         let body = self.parse_block()?;
 
-        Ok(Declaracao::ForEach { variable, iterable, body })
+        Ok(Declaracao::ParaCada { variavel: variable, iteravel: iterable, corpo: body })
     }
 
     fn parse_break_statement(&mut self) -> Result<Declaracao, CompilerError> {
         self.consume(Self::simbolo_com_posicao(Simbolo::Sustar), "Expected 'sustar' keyword")?;
-        Ok(Declaracao::Break)
+        Ok(Declaracao::Interromper)
     }
 
     fn parse_continue_statement(&mut self) -> Result<Declaracao, CompilerError> {
@@ -1042,7 +1042,7 @@ impl<'a> AnaliseSintatica<'a> {
 
         let body = self.parse_block()?;
 
-        Ok(Declaracao::FunctionDeclaration { name: Some(name), params, body })
+        Ok(Declaracao::DeclaracaoDeFuncao { nome: Some(name), parametros: params, corpo: body })
     }
 
     fn parse_return_statement(&mut self) -> Result<Declaracao, CompilerError> {
@@ -1056,7 +1056,7 @@ impl<'a> AnaliseSintatica<'a> {
 
         self.consume(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Expected ';' after return statement")?;
 
-        Ok(Declaracao::Return(value))
+        Ok(Declaracao::Retorna(value))
     }
 }
 
@@ -1072,9 +1072,9 @@ mod tests {
         let mut parser = AnaliseSintatica::new(tokens);
 
         let program = parser.analisar().unwrap();
-        assert_eq!(program.statements.len(), 1);
+        assert_eq!(program.declaracoes.len(), 1);
 
-        match &program.statements[0] {
+        match &program.declaracoes[0] {
             Declaracao::Variavel { nome: name, valor: value } => {
                 assert_eq!(name, "x");
                 assert_eq!(*value, Expressoes::Numero(42));
@@ -1095,7 +1095,7 @@ mod tests {
         let mut parser = AnaliseSintatica::new(tokens);
 
         let program = parser.analisar().unwrap();
-        assert_eq!(program.statements.len(), 3);
+        assert_eq!(program.declaracoes.len(), 3);
     }
 
 }

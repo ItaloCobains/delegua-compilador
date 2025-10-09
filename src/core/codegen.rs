@@ -24,7 +24,7 @@ impl<'ctx> VariableType<'ctx> {
 }
 use std::collections::HashMap;
 
-use crate::core::ast::{Program, Declaracao, Expressoes, OperacaoBinaria};
+use crate::core::ast::{Programa, Declaracao, Expressoes, OperacaoBinaria};
 use crate::core::error::CompilerError;
 use crate::modules::matematica::Matematica;
 
@@ -131,13 +131,13 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(fn_val)
     }
 
-    pub fn generate(&mut self, program: &Program) -> Result<(), CompilerError> {
+    pub fn generate(&mut self, program: &Programa) -> Result<(), CompilerError> {
         let main_type = self.i64_type.fn_type(&[], false);
         let main_fn = self.module.add_function("main", main_type, None);
         let basic_block = self.context.append_basic_block(main_fn, "entry");
         self.builder.position_at_end(basic_block);
 
-        for statement in &program.statements {
+        for statement in &program.declaracoes {
             self.generate_statement(statement)?;
         }
 
@@ -168,32 +168,32 @@ impl<'ctx> CodeGen<'ctx> {
             Declaracao::Selecao { valor: value, casos: cases, padrao: default } => {
                 self.generate_switch_statement(value, cases, default.as_ref())
             }
-            Declaracao::While { condition, body } => {
+            Declaracao::Enquanto { condicao: condition, corpo: body } => {
                 self.generate_while_statement(condition, body)
             }
-            Declaracao::DoWhile { body, condition } => {
+            Declaracao::FacaEnquanto { corpo: body, condicao: condition } => {
                 self.generate_do_while_statement(body, condition)
             }
-            Declaracao::For { initializer, condition, increment, body } => {
+            Declaracao::Para { inicializador: initializer, condicao: condition, incremento: increment, corpo: body } => {
                 self.generate_for_statement(initializer.as_ref().map(|v| &**v), condition.as_ref(), increment.as_ref(), body)
             }
-            Declaracao::ForEach { variable, iterable, body } => {
+            Declaracao::ParaCada { variavel: variable, iteravel: iterable, corpo: body } => {
                 self.generate_for_each_statement(variable, iterable, body)
             }
-            Declaracao::Break => {
+            Declaracao::Interromper => {
                 self.generate_break_statement()
             }
             Declaracao::Continue => {
                 self.generate_continue_statement()
             }
-            Declaracao::FunctionCall(expr) => {
+            Declaracao::ChamadaDeFuncao(expr) => {
                 self.generate_expression(expr)?;
                 Ok(())
             }
-            Declaracao::FunctionDeclaration { name, params, body } => {
+            Declaracao::DeclaracaoDeFuncao { nome: name, parametros: params, corpo: body } => {
                 self.generate_function_declaration(name.as_ref(), params, body)
             }
-            Declaracao::Return(value) => {
+            Declaracao::Retorna(value) => {
                 self.generate_return_statement(value.as_ref())
             }
         }
@@ -1923,7 +1923,7 @@ impl<'ctx> CodeGen<'ctx> {
                 self.generate_statement(stmt)?;
             }
 
-            if !body.iter().any(|stmt| matches!(stmt, Declaracao::Return(_))) {
+            if !body.iter().any(|stmt| matches!(stmt, Declaracao::Retorna(_))) {
                 self.builder.build_return(Some(&self.i64_type.const_int(0, false)))
                     .map_err(|e| CompilerError::CodeGen(format!("Error building return: {:?}", e)))?;
             }
@@ -1987,7 +1987,7 @@ impl<'ctx> CodeGen<'ctx> {
             self.generate_statement(stmt)?;
         }
 
-        if !body.iter().any(|stmt| matches!(stmt, Declaracao::Return(_))) {
+        if !body.iter().any(|stmt| matches!(stmt, Declaracao::Retorna(_))) {
             self.builder.build_return(Some(&self.i64_type.const_int(0, false)))
                 .map_err(|e| CompilerError::CodeGen(format!("Error building return: {:?}", e)))?;
         }

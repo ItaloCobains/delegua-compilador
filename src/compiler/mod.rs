@@ -78,7 +78,7 @@ mod tests {
         let mut parser = AnaliseSintatica::new(tokens);
         let ast = parser.analisar().unwrap();
 
-        assert_eq!(ast.statements.len(), 4);
+        assert_eq!(ast.declaracoes.len(), 4);
 
         let _ = fs::remove_file(test_filename);
     }
