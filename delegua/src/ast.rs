@@ -124,9 +124,9 @@ pub enum Declaracao {
         corpo: Vec<Declaracao>,
     },
 
-    Interromper,
+    Sustar,
 
-    Continue,
+    Continua,
 
     ChamadaDeFuncao(Expressoes),
 

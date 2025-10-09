@@ -48,11 +48,11 @@ impl<'a> AnaliseSintatica<'a> {
                     errors.push(err.clone());
                     if errors.len() > 10 {
                         return Err(CompilerError::Parser(
-                            format!("Too many parse errors ({}). First error: {}", 
+                            format!("Muitos erros de análise ({}). Primeiro erro: {}", 
                                    errors.len(), errors[0])
                         ));
                     }
-                    self.synchronize();
+                    self.sincronizar();
                 }
             }
         }
@@ -65,181 +65,181 @@ impl<'a> AnaliseSintatica<'a> {
     }
 
     fn resolve_declaracao(&mut self) -> Result<Declaracao, CompilerError> {
-        match self.current_token() {
-            Simbolo::Variavel(_) => self.parse_variable_declaration(),
-            Simbolo::Escreva(_) => self.parse_function_call_statement(),
-            Simbolo::Leia(_) => self.parse_function_call_statement(),
-            Simbolo::Importacao(_) => self.parse_import_statement(),
-            Simbolo::Se(_) => self.parse_if_statement(),
-            Simbolo::Escolha(_) => self.parse_switch_statement(),
-            Simbolo::Enquanto(_) => self.parse_while_statement(),
-            Simbolo::Fazer(_) => self.parse_do_while_statement(),
-            Simbolo::Para(_) => self.parse_for_statement(),
-            Simbolo::ParaCada(_) => self.parse_for_each_statement(),
-            Simbolo::Sustar(_) => self.parse_break_statement(),
-            Simbolo::Continua(_) => self.parse_continue_statement(),
+        match self.simbolo_atual() {
+            Simbolo::Variavel(_) => self.resolve_declaracao_variavel(),
+            Simbolo::Escreva(_) => self.resolve_chamada_de_declaracao_funcao(),
+            Simbolo::Leia(_) => self.resolve_chamada_de_declaracao_funcao(),
+            Simbolo::Importacao(_) => self.resolve_declaracao_importacao(),
+            Simbolo::Se(_) => self.resolve_se_declaracao(),
+            Simbolo::Escolha(_) => self.resolve_escolha_declaracao(),
+            Simbolo::Enquanto(_) => self.resolve_enquanto_declaracao(),
+            Simbolo::Fazer(_) => self.resolve_faca_enquanto_declaracao(),
+            Simbolo::Para(_) => self.resolve_para_declaracao(),
+            Simbolo::ParaCada(_) => self.resolve_para_cada_declaracao(),
+            Simbolo::Sustar(_) => self.resolve_sustar_declaracao(),
+            Simbolo::Continua(_) => self.resolve_continua_declaracao(),
             Simbolo::Funcao(_) => {
-                self.advance();
-                if let Simbolo::Identificador(_, _) = self.current_token() {
-                    self.parse_named_function_declaration()
+                self.avancar();
+                if let Simbolo::Identificador(_, _) = self.simbolo_atual() {
+                    self.resolve_declaracao_funcao()
                 } else {
-                    Err(CompilerError::Parser("Unexpected 'funcao' in statement context".to_string()))
+                    Err(CompilerError::Parser("Inesperado 'funcao' no contexto da declaração".to_string()))
                 }
             }
-            Simbolo::Retorna(_) => self.parse_return_statement(),
-            Simbolo::Identificador(_, _) => self.parse_assignment_or_call(),
-            Simbolo::Incremento(_) => self.parse_prefix_increment_decrement(true),
-            Simbolo::Decremento(_) => self.parse_prefix_increment_decrement(false),
+            Simbolo::Retorna(_) => self.resolve_retorna_declaracao(),
+            Simbolo::Identificador(_, _) => self.resolve_atribuicao_ou_chamada(),
+            Simbolo::Incremento(_) => self.resolve_prefixo_incremento_decremento(true),
+            Simbolo::Decremento(_) => self.resolve_prefixo_incremento_decremento(false),
             _ => Err(CompilerError::Parser(format!(
-                "Unexpected token: {:?}", self.current_token()
+                "Token inesperado: {:?}", self.simbolo_atual()
             ))),
         }
     }
 
-    fn parse_variable_declaration(&mut self) -> Result<Declaracao, CompilerError> {
-        self.consume(Self::simbolo_com_posicao(Simbolo::Variavel), "Expected 'var' keyword")?;
+    fn resolve_declaracao_variavel(&mut self) -> Result<Declaracao, CompilerError> {
+        self.consumir(Self::simbolo_com_posicao(Simbolo::Variavel), "Esperado 'var'")?;
 
-        let name = self.consume_identifier("Expected variable name")?;
-        self.consume(Self::simbolo_com_posicao(Simbolo::Atribuir), "Expected '=' after variable name")?;
-        let initializer = self.parse_expression()?;
-        self.consume(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Expected ';' after variable declaration")?;
+        let nome = self.consumir_identificador("Esperado nome da variável")?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::Atribuir), "Esperado '=' após o nome da variável")?;
+        let inicializador = self.resolve_espressao()?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a declaração da variável")?;
 
-        Ok(Declaracao::Variavel { nome: name, valor: initializer })
+        Ok(Declaracao::Variavel { nome, valor: inicializador })
     }
 
-    fn parse_assignment_or_call(&mut self) -> Result<Declaracao, CompilerError> {
-        let name = self.consume_identifier("Expected identifier")?;
+    fn resolve_atribuicao_ou_chamada(&mut self) -> Result<Declaracao, CompilerError> {
+        let nome = self.consumir_identificador("Esperado identificador")?;
 
-        if self.match_token(Self::simbolo_com_posicao(Simbolo::Atribuir)) {
-            let value = self.parse_expression()?;
-            self.consume(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Expected ';' after assignment")?;
-            Ok(Declaracao::Atribuicao { nome: name, valor: value })
-        } else if self.match_token(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
-            let args = self.parse_arguments()?;
-            self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Expected ')' after function arguments")?;
-            self.consume(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Expected ';' after function call")?;
+        if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::Atribuir)) {
+            let valor = self.resolve_espressao()?;
+            self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a atribuição")?;
+            Ok(Declaracao::Atribuicao { nome, valor })
+        } else if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
+            let args = self.resolve_argumentos()?;
+            self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após os argumentos da função")?;
+            self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a chamada da função")?;
             Ok(Declaracao::ChamadaDeFuncao(Expressoes::ChamadaFuncao {
-                chamado: Box::new(Expressoes::Identificador(name)),
+                chamado: Box::new(Expressoes::Identificador(nome)),
                 argumentos: args,
             }))
-        } else if matches!(self.current_token(), Simbolo::Incremento(_)) {
-            self.advance(); // consume ++
-            self.consume(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Expected ';' after increment")?;
+        } else if matches!(self.simbolo_atual(), Simbolo::Incremento(_)) {
+            self.avancar(); // consume ++
+            self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após o incremento")?;
             Ok(Declaracao::ChamadaDeFuncao(Expressoes::Incremento {
-                operando: Box::new(Expressoes::Identificador(name)),
+                operando: Box::new(Expressoes::Identificador(nome)),
                 prefixo: false, // postfix: x++
             }))
-        } else if matches!(self.current_token(), Simbolo::Decremento(_)) {
-            self.advance(); // consume --
-            self.consume(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Expected ';' after decrement")?;
+        } else if matches!(self.simbolo_atual(), Simbolo::Decremento(_)) {
+            self.avancar(); // consume --
+            self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após o decremento")?;
             Ok(Declaracao::ChamadaDeFuncao(Expressoes::Decremento {
-                operando: Box::new(Expressoes::Identificador(name)),
+                operando: Box::new(Expressoes::Identificador(nome)),
                 prefixo: false, // postfix: x--
             }))
         } else {
             Err(CompilerError::Parser(
-                "Expected '=', '(', '++', or '--' after identifier".to_string()
+                "Esperado '=', '(', '++', ou '--' após o identificador".to_string()
             ))
         }
     }
     
-    fn parse_prefix_increment_decrement(&mut self, is_increment: bool) -> Result<Declaracao, CompilerError> {
-        self.advance(); // consume ++ or --
+    fn resolve_prefixo_incremento_decremento(&mut self, is_increment: bool) -> Result<Declaracao, CompilerError> {
+        self.avancar(); // consume ++ or --
         
-        let name = match self.current_token() {
-            Simbolo::Identificador(name, _) => name.to_string(),
-            _ => return Err(CompilerError::Parser("Expected identifier after ++ or --".to_string())),
+        let nome = match self.simbolo_atual() {
+            Simbolo::Identificador(nome, _) => nome.to_string(),
+            _ => return Err(CompilerError::Parser("Esperado identificador após ++ ou --".to_string())),
         };
-        self.advance();
-        
-        self.consume(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Expected ';' after prefix increment/decrement")?;
-        
+        self.avancar();
+
+        self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após o incremento/decremento")?;
+
         if is_increment {
             Ok(Declaracao::ChamadaDeFuncao(Expressoes::Incremento {
-                operando: Box::new(Expressoes::Identificador(name)),
+                operando: Box::new(Expressoes::Identificador(nome)),
                 prefixo: true, // prefix: ++x
             }))
         } else {
             Ok(Declaracao::ChamadaDeFuncao(Expressoes::Decremento {
-                operando: Box::new(Expressoes::Identificador(name)),
+                operando: Box::new(Expressoes::Identificador(nome)),
                 prefixo: true, // prefix: --x
             }))
         }
     }
 
-    fn parse_function_call_statement(&mut self) -> Result<Declaracao, CompilerError> {
-        let expr = self.parse_function_call()?;
-        self.consume(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Expected ';' after function call")?;
+    fn resolve_chamada_de_declaracao_funcao(&mut self) -> Result<Declaracao, CompilerError> {
+        let expr = self.resolve_chamada_funcao()?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a chamada de função")?;
         Ok(Declaracao::ChamadaDeFuncao(expr))
     }
 
-    fn parse_import_statement(&mut self) -> Result<Declaracao, CompilerError> {
-        self.consume(Self::simbolo_com_posicao(Simbolo::Importacao), "Expected 'importar' keyword")?;
+    fn resolve_declaracao_importacao(&mut self) -> Result<Declaracao, CompilerError> {
+        self.consumir(Self::simbolo_com_posicao(Simbolo::Importacao), "Esperado palavra-chave 'importar'")?;
 
-        if let Simbolo::Texto(module, _) = self.current_token() {
+        if let Simbolo::Texto(module, _) = self.simbolo_atual() {
             let module = module.to_string();
-            self.advance();
-            self.consume(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Expected ';' after import")?;
+            self.avancar();
+            self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a importação")?;
             Ok(Declaracao::Importacao { modulo: module, itens: None })
-        } else if self.match_token(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda)) {
+        } else if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda)) {
             let mut items = Vec::new();
-            while !self.check(Self::simbolo_com_posicao(Simbolo::ChaveDireita)) && !self.esta_no_fim() {
-                if let Simbolo::Identificador(name, _) = self.current_token() {
+            while !self.compara(Self::simbolo_com_posicao(Simbolo::ChaveDireita)) && !self.esta_no_fim() {
+                if let Simbolo::Identificador(name, _) = self.simbolo_atual() {
                     let name = name.to_string();
                     items.push(name);
-                    self.advance();
+                    self.avancar();
                 } else {
-                    return Err(CompilerError::Parser("Expected identifier in import list".to_string()));
+                    return Err(CompilerError::Parser("Esperado identificador na lista de importação".to_string()));
                 }
-                if self.match_token(Self::simbolo_com_posicao(Simbolo::Virgula)) {
+                if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::Virgula)) {
                     // continue
-                } else if !self.check(Self::simbolo_com_posicao(Simbolo::ChaveDireita)) {
-                    return Err(CompilerError::Parser("Expected ',' or '}' in import list".to_string()));
+                } else if !self.compara(Self::simbolo_com_posicao(Simbolo::ChaveDireita)) {
+                    return Err(CompilerError::Parser("Esperado ',' ou '}' na lista de importação".to_string()));
                 }
             }
-            self.consume(Self::simbolo_com_posicao(Simbolo::ChaveDireita), "Expected '}' after import list")?;
-            self.consume(Self::identificador_simbolo("from"), "Expected 'from' after import list")?;
-            if let Simbolo::Texto(module, _) = self.current_token() {
+            self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveDireita), "Esperado '}' após a lista de importação")?;
+            self.consumir(Self::identificador_simbolo("from"), "Esperado 'from' após a lista de importação")?;
+            if let Simbolo::Texto(module, _) = self.simbolo_atual() {
                 let module = module.to_string();
-                self.advance();
-                self.consume(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Expected ';' after import")?;
+                self.avancar();
+                self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a importação")?;
                 Ok(Declaracao::Importacao { modulo: module, itens: Some(items) })
             } else {
-                Err(CompilerError::Parser("Expected module name after 'from'".to_string()))
+                Err(CompilerError::Parser("Esperado nome do módulo após 'from'".to_string()))
             }
         } else {
-            Err(CompilerError::Parser("Expected string or '{' after 'import'".to_string()))
+            Err(CompilerError::Parser("Esperado string ou '{' após 'importar'".to_string()))
         }
     }
 
-    fn parse_function_call(&mut self) -> Result<Expressoes, CompilerError> {
-        let callee = self.parse_primary()?;
+    fn resolve_chamada_funcao(&mut self) -> Result<Expressoes, CompilerError> {
+        let callee = self.resolve_primario()?;
 
         if let Expressoes::ChamadaFuncao { .. } = callee {
             return Ok(callee);
         }
 
-        self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo), "Expected '(' after function name")?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo), "Esperado '(' após o nome da função")?;
 
-        let args = self.parse_arguments()?;
+        let args = self.resolve_argumentos()?;
 
-        self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Expected ')' after function arguments")?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após os argumentos da função")?;
 
         Ok(Expressoes::ChamadaFuncao { chamado: Box::new(callee), argumentos: args })
     }
 
-    fn parse_arguments(&mut self) -> Result<Vec<Expressoes>, CompilerError> {
-        if matches!(self.current_token(), Simbolo::ParenteseDireito(_)) {
+    fn resolve_argumentos(&mut self) -> Result<Vec<Expressoes>, CompilerError> {
+        if matches!(self.simbolo_atual(), Simbolo::ParenteseDireito(_)) {
             return Ok(Vec::new());
         }
 
-        let mut args = Vec::with_capacity(4); // Pre-allocate for common case
+        let mut args = Vec::with_capacity(4);
         
         loop {
-            args.push(self.parse_expression()?);
+            args.push(self.resolve_espressao()?);
             
-            if matches!(self.current_token(), Simbolo::Virgula(_)) {
-                self.advance();
+            if matches!(self.simbolo_atual(), Simbolo::Virgula(_)) {
+                self.avancar();
             } else {
                 break;
             }
@@ -248,30 +248,30 @@ impl<'a> AnaliseSintatica<'a> {
         Ok(args)
     }
 
-    fn parse_parameters(&mut self) -> Result<Vec<String>, CompilerError> {
-        if matches!(self.current_token(), Simbolo::ParenteseDireito(_)) {
+    fn resolve_parametros(&mut self) -> Result<Vec<String>, CompilerError> {
+        if matches!(self.simbolo_atual(), Simbolo::ParenteseDireito(_)) {
             return Ok(Vec::new());
         }
 
-        let mut params = Vec::with_capacity(4); // Pre-allocate
+        let mut params = Vec::with_capacity(4);
         
         loop {
-            match self.current_token() {
+            match self.simbolo_atual() {
                 Simbolo::Identificador(param, _) => {
                     params.push(param.to_string());
-                    self.advance();
+                    self.avancar();
                 }
                 _ => {
-                    let pos = self.current_position();
+                    let pos = self.posicao_atual();
                     return Err(CompilerError::Parser(
-                        format!("Expected parameter name at line {}, column {}", 
+                        format!("Esperado nome do parâmetro na linha {}, coluna {}", 
                                pos.linha, pos.coluna)
                     ));
                 }
             }
 
-            if matches!(self.current_token(), Simbolo::Virgula(_)) {
-                self.advance();
+            if matches!(self.simbolo_atual(), Simbolo::Virgula(_)) {
+                self.avancar();
             } else {
                 break;
             }
@@ -280,16 +280,16 @@ impl<'a> AnaliseSintatica<'a> {
         Ok(params)
     }
 
-    fn parse_expression(&mut self) -> Result<Expressoes, CompilerError> {
-        self.parse_logical_or()
+    fn resolve_espressao(&mut self) -> Result<Expressoes, CompilerError> {
+        self.resolve_logico_ou()
     }
 
-    fn parse_logical_or(&mut self) -> Result<Expressoes, CompilerError> {
-        let mut left = self.parse_logical_and()?;
+    fn resolve_logico_ou(&mut self) -> Result<Expressoes, CompilerError> {
+        let mut left = self.resolve_logico_e()?;
 
-        while matches!(self.current_token(), Simbolo::Ou(_)) {
-            self.advance();
-            let right = self.parse_logical_and()?;
+        while matches!(self.simbolo_atual(), Simbolo::Ou(_)) {
+            self.avancar();
+            let right = self.resolve_logico_e()?;
             left = Expressoes::Binario {
                 esquerda: Box::new(left),
                 operador: OperacaoBinaria::Ou,
@@ -300,12 +300,12 @@ impl<'a> AnaliseSintatica<'a> {
         Ok(left)
     }
 
-    fn parse_logical_and(&mut self) -> Result<Expressoes, CompilerError> {
-        let mut left = self.parse_comparison()?;
+    fn resolve_logico_e(&mut self) -> Result<Expressoes, CompilerError> {
+        let mut left = self.resolve_comparacao()?;
 
-        while matches!(self.current_token(), Simbolo::E(_)) {
-            self.advance();
-            let right = self.parse_comparison()?;
+        while matches!(self.simbolo_atual(), Simbolo::E(_)) {
+            self.avancar();
+            let right = self.resolve_comparacao()?;
             left = Expressoes::Binario {
                 esquerda: Box::new(left),
                 operador: OperacaoBinaria::E,
@@ -316,14 +316,14 @@ impl<'a> AnaliseSintatica<'a> {
         Ok(left)
     }
 
-    fn parse_comparison(&mut self) -> Result<Expressoes, CompilerError> {
-        let mut left = self.parse_additive()?;
+    fn resolve_comparacao(&mut self) -> Result<Expressoes, CompilerError> {
+        let mut left = self.resolve_aditiva()?;
 
-        while matches!(self.current_token(), 
+        while matches!(self.simbolo_atual(), 
             Simbolo::Menor(_) | Simbolo::Maior(_) | Simbolo::MenorIgual(_) | 
             Simbolo::MaiorIgual(_) | Simbolo::Igual(_) | Simbolo::NaoIgual(_)
         ) {
-            let operator = match self.current_token() {
+            let operator = match self.simbolo_atual() {
                 Simbolo::Menor(_) => OperacaoBinaria::Menor,
                 Simbolo::Maior(_) => OperacaoBinaria::Maior,
                 Simbolo::MenorIgual(_) => OperacaoBinaria::MenorIgual,
@@ -332,9 +332,9 @@ impl<'a> AnaliseSintatica<'a> {
                 Simbolo::NaoIgual(_) => OperacaoBinaria::NaoIgual,
                 _ => unreachable!(),
             };
-            self.advance();
+            self.avancar();
 
-            let right = self.parse_additive()?;
+            let right = self.resolve_aditiva()?;
             left = Expressoes::Binario {
                 esquerda: Box::new(left),
                 operador: operator,
@@ -345,18 +345,18 @@ impl<'a> AnaliseSintatica<'a> {
         Ok(left)
     }
 
-    fn parse_additive(&mut self) -> Result<Expressoes, CompilerError> {
-        let mut left = self.parse_multiplicative()?;
+    fn resolve_aditiva(&mut self) -> Result<Expressoes, CompilerError> {
+        let mut left = self.resolve_multiplacativa()?;
 
-        while matches!(self.current_token(), Simbolo::Adicao(_) | Simbolo::Subtracao(_)) {
-            let operator = match self.current_token() {
+        while matches!(self.simbolo_atual(), Simbolo::Adicao(_) | Simbolo::Subtracao(_)) {
+            let operator = match self.simbolo_atual() {
                 Simbolo::Adicao(_) => OperacaoBinaria::Adicao,
                 Simbolo::Subtracao(_) => OperacaoBinaria::Subtracao,
                 _ => unreachable!(),
             };
-            self.advance();
+            self.avancar();
 
-            let right = self.parse_multiplicative()?;
+            let right = self.resolve_multiplacativa()?;
             left = Expressoes::Binario {
                 esquerda: Box::new(left),
                 operador: operator,
@@ -367,19 +367,19 @@ impl<'a> AnaliseSintatica<'a> {
         Ok(left)
     }
 
-    fn parse_multiplicative(&mut self) -> Result<Expressoes, CompilerError> {
-        let mut left = self.parse_power()?;
+    fn resolve_multiplacativa(&mut self) -> Result<Expressoes, CompilerError> {
+        let mut left = self.resolve_potencia()?;
 
-        while matches!(self.current_token(), Simbolo::Multiplicacao(_) | Simbolo::Divisao(_) | Simbolo::Modulo(_)) {
-            let operator = match self.current_token() {
+        while matches!(self.simbolo_atual(), Simbolo::Multiplicacao(_) | Simbolo::Divisao(_) | Simbolo::Modulo(_)) {
+            let operator = match self.simbolo_atual() {
                 Simbolo::Multiplicacao(_) => OperacaoBinaria::Multiplicacao,
                 Simbolo::Divisao(_) => OperacaoBinaria::Divisao,
                 Simbolo::Modulo(_) => OperacaoBinaria::Modulo,
                 _ => unreachable!(),
             };
-            self.advance();
+            self.avancar();
 
-            let right = self.parse_power()?;
+            let right = self.resolve_potencia()?;
             left = Expressoes::Binario {
                 esquerda: Box::new(left),
                 operador: operator,
@@ -390,13 +390,13 @@ impl<'a> AnaliseSintatica<'a> {
         Ok(left)
     }
     
-    fn parse_power(&mut self) -> Result<Expressoes, CompilerError> {
-        let mut left = self.parse_unary()?;
+    fn resolve_potencia(&mut self) -> Result<Expressoes, CompilerError> {
+        let mut left = self.resolve_unario()?;
         
         // Right associative: 2**3**2 = 2**(3**2) = 512
-        if matches!(self.current_token(), Simbolo::Potencia(_)) {
-            self.advance();
-            let right = self.parse_power()?; // Right associative recursion
+        if matches!(self.simbolo_atual(), Simbolo::Potencia(_)) {
+            self.avancar();
+            let right = self.resolve_potencia()?; // Right associative recursion
             left = Expressoes::Binario {
                 esquerda: Box::new(left),
                 operador: OperacaoBinaria::Potencia,
@@ -407,82 +407,81 @@ impl<'a> AnaliseSintatica<'a> {
         Ok(left)
     }
 
-    fn parse_unary(&mut self) -> Result<Expressoes, CompilerError> {
-        match self.current_token() {
+    fn resolve_unario(&mut self) -> Result<Expressoes, CompilerError> {
+        match self.simbolo_atual() {
             Simbolo::Adicao(_) => {
-                self.advance();
-                self.parse_unary()
+                self.avancar();
+                self.resolve_unario()
             }
             Simbolo::Subtracao(_) => {
-                self.advance();
-                let operand = self.parse_unary()?;
+                self.avancar();
+                let operand = self.resolve_unario()?;
                 Ok(Expressoes::Unario {
                     operador: OperacaoBinaria::Subtracao,
                     operando: Box::new(operand),
                 })
             }
             Simbolo::Nao(_) => {
-                self.advance();
-                let operand = self.parse_unary()?;
+                self.avancar();
+                let operand = self.resolve_unario()?;
                 Ok(Expressoes::Unario {
                     operador: OperacaoBinaria::Nao,
                     operando: Box::new(operand),
                 })
             }
             Simbolo::Incremento(_) => {
-                self.advance();
-                let operand = self.parse_postfix()?;
+                self.avancar();
+                let operand = self.resolve_pos_fixado()?;
                 Ok(Expressoes::Incremento {
                     operando: Box::new(operand),
                     prefixo: true,
                 })
             }
             Simbolo::Decremento(_) => {
-                self.advance();
-                let operand = self.parse_postfix()?;
+                self.avancar();
+                let operand = self.resolve_pos_fixado()?;
                 Ok(Expressoes::Decremento {
                     operando: Box::new(operand),
                     prefixo: true,
                 })
             }
-            _ => self.parse_postfix()
+            _ => self.resolve_pos_fixado()
         }
     }
     
-    fn parse_postfix(&mut self) -> Result<Expressoes, CompilerError> {
-        let mut expr = self.parse_primary()?;
+    fn resolve_pos_fixado(&mut self) -> Result<Expressoes, CompilerError> {
+        let mut expr = self.resolve_primario()?;
         
-        // Handle postfix increment/decrement
         loop {
-            match self.current_token() {
+            match self.simbolo_atual() {
                 Simbolo::Incremento(_) => {
-                    self.advance();
+                    self.avancar();
                     expr = Expressoes::Incremento {
                         operando: Box::new(expr),
                         prefixo: false,
                     };
                 }
                 Simbolo::Decremento(_) => {
-                    self.advance();
+                    self.avancar();
                     expr = Expressoes::Decremento {
                         operando: Box::new(expr),
                         prefixo: false,
                     };
                 }
                 Simbolo::ColcheteEsquerdo(_) => {
-                    self.advance();
-                    let index = self.parse_expression()?;
-                    self.consume(Self::simbolo_com_posicao(Simbolo::ColcheteDireito), "Expected ']' after array index")?;
+                    self.avancar();
+                    let index = self.resolve_espressao()?;
+                    self.consumir(Self::simbolo_com_posicao(Simbolo::ColcheteDireito), "Expected ']' after array index")?;
                     expr = Expressoes::Indice {
                         lista: Box::new(expr),
                         indice: Box::new(index),
                     };
                 }
                 Simbolo::Ponto(_) => {
-                    self.advance();
-                    if let Simbolo::Identificador(name, _) = self.current_token() {
+                    self.avancar();
+                    if let Simbolo::Identificador(name, _) = self.simbolo_atual() {
                         let property = name.to_string();
-                        self.advance();
+                        self.avancar();
                         expr = Expressoes::PropriedadeAcesso {
                             objeto: Box::new(expr),
                             propriedade: property,
@@ -498,30 +497,30 @@ impl<'a> AnaliseSintatica<'a> {
         Ok(expr)
     }
 
-    fn parse_primary(&mut self) -> Result<Expressoes, CompilerError> {
-        match *self.current_token() {
+    fn resolve_primario(&mut self) -> Result<Expressoes, CompilerError> {
+        match *self.simbolo_atual() {
             Simbolo::Number(n, _) => {
-                self.advance();
+                self.avancar();
                 Ok(Expressoes::Numero(n))
             }
             Simbolo::Texto(ref s, _) => {
                 let s = s.to_string();
-                self.advance();
+                self.avancar();
                 Ok(Expressoes::Texto(s))
             }
             Simbolo::Verdadeiro(_) => {
-                self.advance();
+                self.avancar();
                 Ok(Expressoes::Logico(true))
             }
             Simbolo::Falso(_) => {
-                self.advance();
+                self.avancar();
                 Ok(Expressoes::Logico(false))
             }
             Simbolo::Escreva(_) => {
-                self.advance();
-                if self.match_token(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
-                    let args = self.parse_arguments()?;
-                    self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Expected ')' after function arguments")?;
+                self.avancar();
+                if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
+                    let args = self.resolve_argumentos()?;
+                    self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
                     Ok(Expressoes::ChamadaFuncao {
                         chamado: Box::new(Expressoes::Identificador("escreva".to_string())),
                         argumentos: args,
@@ -532,11 +531,11 @@ impl<'a> AnaliseSintatica<'a> {
             }
             Simbolo::Identificador(name, _) => {
                 let name = name.to_string();
-                self.advance();
+                self.avancar();
 
-                if self.match_token(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
-                    let args = self.parse_arguments()?;
-                    self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Expected ')' after function arguments")?;
+                if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
+                    let args = self.resolve_argumentos()?;
+                    self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
                     Ok(Expressoes::ChamadaFuncao {
                         chamado: Box::new(Expressoes::Identificador(name)),
                         argumentos: args,
@@ -546,19 +545,19 @@ impl<'a> AnaliseSintatica<'a> {
                 }
             }
             Simbolo::Funcao(_) => {
-                self.advance();
-                self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo), "Expected '(' after 'funcao'")?;
-                let params = self.parse_parameters()?;
-                self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Expected ')' after parameters")?;
-                self.consume(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Expected '{' after function signature")?;
-                let body = self.parse_block()?;
+                self.avancar();
+                self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo), "Esperado '(' após 'funcao'")?;
+                let params = self.resolve_parametros()?;
+                self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após parâmetros")?;
+                self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Esperado '{' após assinatura da função")?;
+                let body = self.resolve_bloco()?;
                 Ok(Expressoes::Funcao { paramentros: params, corpo: body })
             }
             Simbolo::TextoFuncao(_) => {
-                self.advance();
-                if self.match_token(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
-                    let args = self.parse_arguments()?;
-                    self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Expected ')' after function arguments")?;
+                self.avancar();
+                if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
+                    let args = self.resolve_argumentos()?;
+                    self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
                     Ok(Expressoes::ChamadaFuncao {
                         chamado: Box::new(Expressoes::Identificador("texto".to_string())),
                         argumentos: args,
@@ -569,10 +568,10 @@ impl<'a> AnaliseSintatica<'a> {
                 }
             }
             Simbolo::Leia(_) => {
-                self.advance();
-                if self.match_token(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
-                    let args = self.parse_arguments()?;
-                    self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Expected ')' after function arguments")?;
+                self.avancar();
+                if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
+                    let args = self.resolve_argumentos()?;
+                    self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
                     Ok(Expressoes::ChamadaFuncao {
                         chamado: Box::new(Expressoes::Identificador("leia".to_string())),
                         argumentos: args,
@@ -582,10 +581,10 @@ impl<'a> AnaliseSintatica<'a> {
                 }
             }
             Simbolo::Comprimento(_) => {
-                self.advance();
-                if self.match_token(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
-                    let args = self.parse_arguments()?;
-                    self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Expected ')' after function arguments")?;
+                self.avancar();
+                if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
+                    let args = self.resolve_argumentos()?;
+                    self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
                     Ok(Expressoes::ChamadaFuncao {
                         chamado: Box::new(Expressoes::Identificador("comprimento".to_string())),
                         argumentos: args,
@@ -595,10 +594,10 @@ impl<'a> AnaliseSintatica<'a> {
                 }
             }
             Simbolo::Maiuscula(_) => {
-                self.advance();
-                if self.match_token(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
-                    let args = self.parse_arguments()?;
-                    self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Expected ')' after function arguments")?;
+                self.avancar();
+                if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
+                    let args = self.resolve_argumentos()?;
+                    self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
                     Ok(Expressoes::ChamadaFuncao {
                         chamado: Box::new(Expressoes::Identificador("maiuscula".to_string())),
                         argumentos: args,
@@ -608,10 +607,10 @@ impl<'a> AnaliseSintatica<'a> {
                 }
             }
             Simbolo::Minuscula(_) => {
-                self.advance();
-                if self.match_token(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
-                    let args = self.parse_arguments()?;
-                    self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Expected ')' after function arguments")?;
+                self.avancar();
+                if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
+                    let args = self.resolve_argumentos()?;
+                    self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
                     Ok(Expressoes::ChamadaFuncao {
                         chamado: Box::new(Expressoes::Identificador("minuscula".to_string())),
                         argumentos: args,
@@ -621,10 +620,10 @@ impl<'a> AnaliseSintatica<'a> {
                 }
             }
             Simbolo::Absoluto(_) => {
-                self.advance();
-                if self.match_token(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
-                    let args = self.parse_arguments()?;
-                    self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Expected ')' after function arguments")?;
+                self.avancar();
+                if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
+                    let args = self.resolve_argumentos()?;
+                    self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
                     Ok(Expressoes::ChamadaFuncao {
                         chamado: Box::new(Expressoes::Identificador("absoluto".to_string())),
                         argumentos: args,
@@ -634,10 +633,10 @@ impl<'a> AnaliseSintatica<'a> {
                 }
             }
             Simbolo::PotenciaFuncao(_) => {
-                self.advance();
-                if self.match_token(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
-                    let args = self.parse_arguments()?;
-                    self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Expected ')' after function arguments")?;
+                self.avancar();
+                if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
+                    let args = self.resolve_argumentos()?;
+                    self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
                     Ok(Expressoes::ChamadaFuncao {
                         chamado: Box::new(Expressoes::Identificador("potencia".to_string())),
                         argumentos: args,
@@ -647,10 +646,10 @@ impl<'a> AnaliseSintatica<'a> {
                 }
             }
             Simbolo::RaizQuadrada(_) => {
-                self.advance();
-                if self.match_token(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
-                    let args = self.parse_arguments()?;
-                    self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Expected ')' after function arguments")?;
+                self.avancar();
+                if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
+                    let args = self.resolve_argumentos()?;
+                    self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após argumentos da função")?;
                     Ok(Expressoes::ChamadaFuncao {
                         chamado: Box::new(Expressoes::Identificador("raiz_quadrada".to_string())),
                         argumentos: args,
@@ -660,79 +659,79 @@ impl<'a> AnaliseSintatica<'a> {
                 }
             }
             Simbolo::ParenteseEsquerdo(_) => {
-                self.advance();
-                let expr = self.parse_expression()?;
-                self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Expected ')' after expression")?;
+                self.avancar();
+                let expr = self.resolve_espressao()?;
+                self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após expressão")?;
                 Ok(expr)
             }
             Simbolo::ColcheteEsquerdo(_) => {
-                self.advance();
+                self.avancar();
                 let mut elements = Vec::new();
 
-                if !matches!(self.current_token(), Simbolo::ColcheteDireito(_)) {
+                if !matches!(self.simbolo_atual(), Simbolo::ColcheteDireito(_)) {
                     loop {
-                        elements.push(self.parse_expression()?);
+                        elements.push(self.resolve_espressao()?);
 
-                        if matches!(self.current_token(), Simbolo::Virgula(_)) {
-                            self.advance();
+                        if matches!(self.simbolo_atual(), Simbolo::Virgula(_)) {
+                            self.avancar();
                         } else {
                             break;
                         }
                     }
                 }
 
-                self.consume(Self::simbolo_com_posicao(Simbolo::ColcheteDireito), "Expected ']' after array elements")?;
+                self.consumir(Self::simbolo_com_posicao(Simbolo::ColcheteDireito), "Esperado ']' após elementos da lista")?;
                 Ok(Expressoes::Lista { elementos: elements })
             }
             Simbolo::ChaveEsquerda(_) => {
-                self.advance();
+                self.avancar();
                 let mut properties = Vec::new();
 
-                if !matches!(self.current_token(), Simbolo::ChaveDireita(_)) {
+                if !matches!(self.simbolo_atual(), Simbolo::ChaveDireita(_)) {
                     loop {
-                        let key = match self.current_token() {
+                        let key = match self.simbolo_atual() {
                             Simbolo::Identificador(name, _) => {
                                 let key = name.to_string();
-                                self.advance();
+                                self.avancar();
                                 key
                             }
                             Simbolo::Texto(name, _) => {
                                 let key = name.to_string();
-                                self.advance();
+                                self.avancar();
                                 key
                             }
-                            _ => return Err(CompilerError::Parser("Expected property name in object literal".to_string())),
+                            _ => return Err(CompilerError::Parser("Esperado nome da propriedade no literal de objeto".to_string())),
                         };
 
-                        self.consume(Self::simbolo_com_posicao(Simbolo::DoisPontos), "Expected ':' after property name")?;
-                        let value = self.parse_expression()?;
+                        self.consumir(Self::simbolo_com_posicao(Simbolo::DoisPontos), "Esperado ':' após o nome da propriedade")?;
+                        let value = self.resolve_espressao()?;
                         properties.push((key, value));
 
-                        if matches!(self.current_token(), Simbolo::Virgula(_)) {
-                            self.advance();
+                        if matches!(self.simbolo_atual(), Simbolo::Virgula(_)) {
+                            self.avancar();
                         } else {
                             break;
                         }
                     }
                 }
 
-                self.consume(Self::simbolo_com_posicao(Simbolo::ChaveDireita), "Expected '}' after object properties")?;
+                self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveDireita), "Esperado '}' após propriedades do objeto")?;
                 Ok(Expressoes::Objeto { propriedades: properties })
             }
             _ => Err(CompilerError::Parser(format!(
-                "Unexpected token in expression: {:?}", self.current_token()
+                "Token inesperado na expressão: {:?}", self.simbolo_atual()
             ))),
         }
     }
 
 
     #[inline]
-    fn current_token(&self) -> &Simbolo<'a> {
+    fn simbolo_atual(&self) -> &Simbolo<'a> {
         self.simbolos.get(self.atual).unwrap_or(&self.eof_simbolo)
     }
 
     #[inline]
-    fn previous_token(&self) -> &Simbolo<'a> {
+    fn simbolo_anterior(&self) -> &Simbolo<'a> {
         if self.atual > 0 {
             self.simbolos.get(self.atual - 1).unwrap_or(&self.eof_simbolo)
         } else {
@@ -741,27 +740,27 @@ impl<'a> AnaliseSintatica<'a> {
     }
 
     #[inline]
-    fn advance(&mut self) -> &Simbolo<'a> {
+    fn avancar(&mut self) -> &Simbolo<'a> {
         if !self.esta_no_fim() {
             self.atual += 1;
         }
-        self.previous_token()
+        self.simbolo_anterior()
     }
 
-    fn consume(&mut self, expected: Simbolo, message: &str) -> Result<String, CompilerError> {
-        if self.check(expected.clone()) {
-            let result = match self.current_token() {
+    fn consumir(&mut self, expected: Simbolo, message: &str) -> Result<String, CompilerError> {
+        if self.compara(expected.clone()) {
+            let result = match self.simbolo_atual() {
                 Simbolo::Identificador(name, _) => name.to_string(),
                 Simbolo::Texto(s, _) => s.to_string(),
                 _ => String::new(),
             };
-            self.advance();
+            self.avancar();
             Ok(result)
         } else {
-            let pos = self.current_position();
+            let pos = self.posicao_atual();
             Err(CompilerError::Parser(
                 format!("{} at line {}, column {}. Found: {:?}", 
-                       message, pos.linha, pos.coluna, self.current_token())
+                       message, pos.linha, pos.coluna, self.simbolo_atual())
             ))
         }
     }
@@ -782,9 +781,9 @@ impl<'a> AnaliseSintatica<'a> {
         }
     }
 
-    fn consume_identifier(&mut self, message: &str) -> Result<String, CompilerError> {
-        if let Some(name) = self.token_to_identifier_name(&self.current_token()) {
-            self.advance();
+    fn consumir_identificador(&mut self, message: &str) -> Result<String, CompilerError> {
+        if let Some(name) = self.token_to_identifier_name(&self.simbolo_atual()) {
+            self.avancar();
             Ok(name)
         } else {
             Err(CompilerError::Parser(message.to_string()))
@@ -793,9 +792,9 @@ impl<'a> AnaliseSintatica<'a> {
 
 
 
-    fn match_token(&mut self, expected: Simbolo) -> bool {
-        if self.check(expected) {
-            self.advance();
+    fn compara_simbolos(&mut self, expected: Simbolo) -> bool {
+        if self.compara(expected) {
+            self.avancar();
             true
         } else {
             false
@@ -804,26 +803,26 @@ impl<'a> AnaliseSintatica<'a> {
 
 
     #[inline]
-    fn check(&self, expected: Simbolo) -> bool {
-        !self.esta_no_fim() && self.token_matches(&expected)
+    fn compara(&self, expected: Simbolo) -> bool {
+        !self.esta_no_fim() && self.compara_simbolo_atual(&expected)
     }
     
     #[inline]
-    fn token_matches(&self, expected: &Simbolo) -> bool {
-        match (self.current_token(), expected) {
+    fn compara_simbolo_atual(&self, expected: &Simbolo) -> bool {
+        match (self.simbolo_atual(), expected) {
             (Simbolo::Texto(_, _), Simbolo::Texto(_, _)) => true,
             (Simbolo::Identificador(_, _), Simbolo::Identificador(_, _)) => true,
             (Simbolo::Number(_, _), Simbolo::Number(_, _)) => true,
-            _ => std::mem::discriminant(self.current_token()) == std::mem::discriminant(expected),
+            _ => std::mem::discriminant(self.simbolo_atual()) == std::mem::discriminant(expected),
         }
     }
 
     fn esta_no_fim(&self) -> bool {
-        matches!(self.current_token(), Simbolo::EOF(_))
+        matches!(self.simbolo_atual(), Simbolo::EOF(_))
     }
 
-    fn current_position(&self) -> Posicao {
-        match self.current_token() {
+    fn posicao_atual(&self) -> Posicao {
+        match self.simbolo_atual() {
             Simbolo::Number(_, pos) | Simbolo::Texto(_, pos) | Simbolo::Identificador(_, pos) |
             Simbolo::Variavel(pos) | Simbolo::Escreva(pos) | Simbolo::Importacao(pos) |
             Simbolo::Se(pos) | Simbolo::Senao(pos) | Simbolo::EOF(pos) => *pos,
@@ -831,41 +830,41 @@ impl<'a> AnaliseSintatica<'a> {
         }
     }
 
-    fn synchronize(&mut self) {
-        self.advance();
+    fn sincronizar(&mut self) {
+        self.avancar();
         
         while !self.esta_no_fim() {
-            if matches!(self.previous_token(), Simbolo::PontoEVirgula(_)) {
+            if matches!(self.simbolo_anterior(), Simbolo::PontoEVirgula(_)) {
                 return;
             }
             
-            match self.current_token() {
+            match self.simbolo_atual() {
                 Simbolo::Variavel(_) | Simbolo::Funcao(_) | Simbolo::Se(_) |
                 Simbolo::Para(_) | Simbolo::Enquanto(_) | Simbolo::Retorna(_) => return,
-                _ => { self.advance(); }
+                _ => { self.avancar(); }
             }
         }
     }
 
-    fn parse_if_statement(&mut self) -> Result<Declaracao, CompilerError> {
-        self.consume(Self::simbolo_com_posicao(Simbolo::Se), "Expected 'se' keyword")?;
-        let condition = self.parse_expression()?;
-        self.consume(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Expected '{' after condition")?;
-        let then_branch = self.parse_block()?;
+    fn resolve_se_declaracao(&mut self) -> Result<Declaracao, CompilerError> {
+        self.consumir(Self::simbolo_com_posicao(Simbolo::Se), "Esperado 'se'")?;
+        let condition = self.resolve_espressao()?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Esperado '{' após a condição")?;
+        let then_branch = self.resolve_bloco()?;
 
         let mut else_if_branches = Vec::new();
         let mut else_branch = None;
 
-        while self.match_token(Self::simbolo_com_posicao(Simbolo::SenaoSe)) {
-            let else_if_condition = self.parse_expression()?;
-            self.consume(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Expected '{' after else-if condition")?;
-            let else_if_statements = self.parse_block()?;
+        while self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::SenaoSe)) {
+            let else_if_condition = self.resolve_espressao()?;
+            self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Esperado '{' após a condição do else-if")?;
+            let else_if_statements = self.resolve_bloco()?;
             else_if_branches.push((else_if_condition, else_if_statements));
         }
 
-        if self.match_token(Self::simbolo_com_posicao(Simbolo::Senao)) {
-            self.consume(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Expected '{' after 'senao'")?;
-            else_branch = Some(self.parse_block()?);
+        if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::Senao)) {
+            self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Esperado '{' após 'senao'")?;
+            else_branch = Some(self.resolve_bloco()?);
         }
 
         if else_if_branches.is_empty() {
@@ -884,40 +883,41 @@ impl<'a> AnaliseSintatica<'a> {
         }
     }
 
-    fn parse_switch_statement(&mut self) -> Result<Declaracao, CompilerError> {
-        self.consume(Self::simbolo_com_posicao(Simbolo::Escolha), "Expected 'escolha' keyword")?;
-        let value = self.parse_expression()?;
-        self.consume(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Expected '{' after switch value")?;
+    // Switch-case
+    fn resolve_escolha_declaracao(&mut self) -> Result<Declaracao, CompilerError> {
+        self.consumir(Self::simbolo_com_posicao(Simbolo::Escolha), "Esperado 'escolha'")?;
+        let value = self.resolve_espressao()?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Esperado '{' após o valor da escolha")?;
 
         let mut cases = Vec::new();
         let mut default = None;
 
-        while !self.check(Self::simbolo_com_posicao(Simbolo::ChaveDireita)) && !self.esta_no_fim() {
-            if self.match_token(Self::simbolo_com_posicao(Simbolo::Caso)) {
-                let case_value = self.parse_expression()?;
-                self.consume(Self::simbolo_com_posicao(Simbolo::DoisPontos), "Expected ':' after case value")?;
+        while !self.compara(Self::simbolo_com_posicao(Simbolo::ChaveDireita)) && !self.esta_no_fim() {
+            if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::Caso)) {
+                let case_value = self.resolve_espressao()?;
+                self.consumir(Self::simbolo_com_posicao(Simbolo::DoisPontos), "Esperado ':' após o valor do caso")?;
                 let mut case_statements = Vec::new();
 
-                while !self.check(Self::simbolo_com_posicao(Simbolo::Caso)) && !self.check(Self::simbolo_com_posicao(Simbolo::Padrao)) && !self.check(Self::simbolo_com_posicao(Simbolo::ChaveDireita)) && !self.esta_no_fim() {
+                while !self.compara(Self::simbolo_com_posicao(Simbolo::Caso)) && !self.compara(Self::simbolo_com_posicao(Simbolo::Padrao)) && !self.compara(Self::simbolo_com_posicao(Simbolo::ChaveDireita)) && !self.esta_no_fim() {
                     case_statements.push(self.resolve_declaracao()?);
                 }
 
                 cases.push((case_value, case_statements));
-            } else if self.match_token(Self::simbolo_com_posicao(Simbolo::Padrao)) {
-                self.consume(Self::simbolo_com_posicao(Simbolo::DoisPontos), "Expected ':' after 'padrao'")?;
+            } else if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::Padrao)) {
+                self.consumir(Self::simbolo_com_posicao(Simbolo::DoisPontos), "Esperado ':' após 'padrao'")?;
                 let mut default_statements = Vec::new();
 
-                while !self.check(Self::simbolo_com_posicao(Simbolo::ChaveDireita)) && !self.esta_no_fim() {
+                while !self.compara(Self::simbolo_com_posicao(Simbolo::ChaveDireita)) && !self.esta_no_fim() {
                     default_statements.push(self.resolve_declaracao()?);
                 }
 
                 default = Some(default_statements);
             } else {
-                return Err(CompilerError::Parser("Expected 'caso' or 'padrao' in switch statement".to_string()));
+                return Err(CompilerError::Parser("Esperado 'caso' ou 'padrao' na declaração switch".to_string()));
             }
         }
 
-        self.consume(Self::simbolo_com_posicao(Simbolo::ChaveDireita), "Expected '}' after switch body")?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveDireita), "Esperado '}' após o corpo da escolha")?;
 
         Ok(Declaracao::Selecao {
             valor: value,
@@ -926,110 +926,110 @@ impl<'a> AnaliseSintatica<'a> {
         })
     }
 
-    fn parse_while_statement(&mut self) -> Result<Declaracao, CompilerError> {
-        self.consume(Self::simbolo_com_posicao(Simbolo::Enquanto), "Expected 'enquanto' keyword")?;
-        let condition = self.parse_expression()?;
-        self.consume(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Expected '{' after condition")?;
-        let body = self.parse_block()?;
+    fn resolve_enquanto_declaracao(&mut self) -> Result<Declaracao, CompilerError> {
+        self.consumir(Self::simbolo_com_posicao(Simbolo::Enquanto), "Esperado 'enquanto'")?;
+        let condition = self.resolve_espressao()?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Esperado '{' após a condição")?;
+        let body = self.resolve_bloco()?;
 
         Ok(Declaracao::Enquanto { condicao: condition, corpo: body })
     }
 
-    fn parse_do_while_statement(&mut self) -> Result<Declaracao, CompilerError> {
-        self.consume(Self::simbolo_com_posicao(Simbolo::Fazer), "Expected 'fazer' keyword")?;
-        self.consume(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Expected '{' after 'fazer'")?;
-        let body = self.parse_block()?;
-        self.consume(Self::simbolo_com_posicao(Simbolo::Enquanto), "Expected 'enquanto' after do block")?;
-        let condition = self.parse_expression()?;
+    fn resolve_faca_enquanto_declaracao(&mut self) -> Result<Declaracao, CompilerError> {
+        self.consumir(Self::simbolo_com_posicao(Simbolo::Fazer), "Esperado 'fazer'")?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Esperado '{' após 'fazer'")?;
+        let body = self.resolve_bloco()?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::Enquanto), "Esperado 'enquanto' após o bloco 'fazer'")?;
+        let condition = self.resolve_espressao()?;
 
         Ok(Declaracao::FacaEnquanto { corpo: body, condicao: condition })
     }
 
-    fn parse_for_statement(&mut self) -> Result<Declaracao, CompilerError> {
-        self.consume(Self::simbolo_com_posicao(Simbolo::Para), "Expected 'para' keyword")?;
-        self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo), "Expected '(' after 'para'")?;
+    fn resolve_para_declaracao(&mut self) -> Result<Declaracao, CompilerError> {
+        self.consumir(Self::simbolo_com_posicao(Simbolo::Para), "Esperado 'para'")?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo), "Esperado '(' após 'para'")?;
 
-        let initializer = if self.match_token(Self::simbolo_com_posicao(Simbolo::Variavel)) {
-            let name = self.consume_identifier("Expected variable name")?;
-            self.consume(Self::simbolo_com_posicao(Simbolo::Atribuir), "Expected '=' after variable name")?;
-            let value = self.parse_expression()?;
+        let initializer = if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::Variavel)) {
+            let name = self.consumir_identificador("Esperado nome da variável")?;
+            self.consumir(Self::simbolo_com_posicao(Simbolo::Atribuir), "Esperado '=' após o nome da variável")?;
+            let value = self.resolve_espressao()?;
             Some(Box::new(Declaracao::Variavel { nome: name, valor: value }))
-        } else if self.match_token(Self::simbolo_com_posicao(Simbolo::PontoEVirgula)) {
+        } else if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::PontoEVirgula)) {
             None
         } else {
-            return Err(CompilerError::Parser("Expected variable declaration or ';' in for loop".to_string()));
+            return Err(CompilerError::Parser("Esperado declaração de variável ou ';' no loop for".to_string()));
         };
-        self.consume(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Expected ';' after initializer")?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após o inicializador")?;
 
-        let condition = if !self.check(Self::simbolo_com_posicao(Simbolo::PontoEVirgula)) && !self.check(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda)) {
-            Some(self.parse_expression()?)
-        } else {
-            None
-        };
-        
-        if self.check(Self::simbolo_com_posicao(Simbolo::PontoEVirgula)) {
-            self.advance();
-        }
-
-        let increment = if !self.check(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda)) {
-            Some(self.parse_expression()?)
+        let condition = if !self.compara(Self::simbolo_com_posicao(Simbolo::PontoEVirgula)) && !self.compara(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda)) {
+            Some(self.resolve_espressao()?)
         } else {
             None
         };
         
-        if self.check(Self::simbolo_com_posicao(Simbolo::PontoEVirgula)) {
-            self.advance();
+        if self.compara(Self::simbolo_com_posicao(Simbolo::PontoEVirgula)) {
+            self.avancar();
         }
 
-        self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Expected ')' after for header")?;
-        self.consume(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Expected '{' after for header")?;
-        let body = self.parse_block()?;
+        let increment = if !self.compara(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda)) {
+            Some(self.resolve_espressao()?)
+        } else {
+            None
+        };
+        
+        if self.compara(Self::simbolo_com_posicao(Simbolo::PontoEVirgula)) {
+            self.avancar();
+        }
+
+        self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após o cabeçalho do for")?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Esperado '{' após o cabeçalho do for")?;
+        let body = self.resolve_bloco()?;
 
         Ok(Declaracao::Para { inicializador: initializer, condicao: condition, incremento: increment, corpo: body })
     }
 
-    fn parse_for_each_statement(&mut self) -> Result<Declaracao, CompilerError> {
-        self.consume(Self::simbolo_com_posicao(Simbolo::ParaCada), "Expected 'para cada' keyword")?;
-        let variable = self.consume_identifier("Expected variable name")?;
-        self.consume(Self::identificador_simbolo("de"), "Expected 'de' after variable")?;
-        let iterable = self.parse_expression()?;
-        self.consume(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Expected '{' after iterable")?;
-        let body = self.parse_block()?;
+    fn resolve_para_cada_declaracao(&mut self) -> Result<Declaracao, CompilerError> {
+        self.consumir(Self::simbolo_com_posicao(Simbolo::ParaCada), "Esperado palavra-chave 'para cada'")?;
+        let variable = self.consumir_identificador("Esperado nome da variável")?;
+        self.consumir(Self::identificador_simbolo("de"), "Esperado 'de' após a variável")?;
+        let iterable = self.resolve_espressao()?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Esperado '{' após o iterável")?;
+        let body = self.resolve_bloco()?;
 
         Ok(Declaracao::ParaCada { variavel: variable, iteravel: iterable, corpo: body })
     }
 
-    fn parse_break_statement(&mut self) -> Result<Declaracao, CompilerError> {
-        self.consume(Self::simbolo_com_posicao(Simbolo::Sustar), "Expected 'sustar' keyword")?;
-        Ok(Declaracao::Interromper)
+    fn resolve_sustar_declaracao(&mut self) -> Result<Declaracao, CompilerError> {
+        self.consumir(Self::simbolo_com_posicao(Simbolo::Sustar), "Esperado palavra-chave 'sustar'")?;
+        Ok(Declaracao::Sustar)
     }
 
-    fn parse_continue_statement(&mut self) -> Result<Declaracao, CompilerError> {
-        self.consume(Self::simbolo_com_posicao(Simbolo::Continua), "Expected 'continua' keyword")?;
-        Ok(Declaracao::Continue)
+    fn resolve_continua_declaracao(&mut self) -> Result<Declaracao, CompilerError> {
+        self.consumir(Self::simbolo_com_posicao(Simbolo::Continua), "Esperado palavra-chave 'continua'")?;
+        Ok(Declaracao::Continua)
     }
 
-    fn parse_block(&mut self) -> Result<Vec<Declaracao>, CompilerError> {
+    fn resolve_bloco(&mut self) -> Result<Vec<Declaracao>, CompilerError> {
         let mut statements = Vec::new();
 
-        while !self.check(Self::simbolo_com_posicao(Simbolo::ChaveDireita)) && !self.esta_no_fim() {
+        while !self.compara(Self::simbolo_com_posicao(Simbolo::ChaveDireita)) && !self.esta_no_fim() {
             statements.push(self.resolve_declaracao()?);
         }
 
-        self.consume(Self::simbolo_com_posicao(Simbolo::ChaveDireita), "Expected '}' after block")?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveDireita), "Esperado '}' após o bloco")?;
         Ok(statements)
     }
 
-    fn parse_named_function_declaration(&mut self) -> Result<Declaracao, CompilerError> {
-        let name = self.consume_identifier("Expected function name")?;
-        self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo), "Expected '(' after function name")?;
+    fn resolve_declaracao_funcao(&mut self) -> Result<Declaracao, CompilerError> {
+        let name = self.consumir_identificador("Esperado nome da função")?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo), "Esperado '(' após o nome da função")?;
 
         let mut params = Vec::new();
-        if !self.check(Self::simbolo_com_posicao(Simbolo::ParenteseDireito)) {
+        if !self.compara(Self::simbolo_com_posicao(Simbolo::ParenteseDireito)) {
             loop {
-                params.push(self.consume_identifier("Expected parameter name")?);
+                params.push(self.consumir_identificador("Esperado nome do parâmetro")?);
 
-                if self.match_token(Self::simbolo_com_posicao(Simbolo::Virgula)) {
+                if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::Virgula)) {
                     continue;
                 } else {
                     break;
@@ -1037,24 +1037,24 @@ impl<'a> AnaliseSintatica<'a> {
             }
         }
 
-        self.consume(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Expected ')' after parameters")?;
-        self.consume(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Expected '{' after function signature")?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após os parâmetros")?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda), "Esperado '{' após a assinatura da função")?;
 
-        let body = self.parse_block()?;
+        let body = self.resolve_bloco()?;
 
         Ok(Declaracao::DeclaracaoDeFuncao { nome: Some(name), parametros: params, corpo: body })
     }
 
-    fn parse_return_statement(&mut self) -> Result<Declaracao, CompilerError> {
-        self.consume(Self::simbolo_com_posicao(Simbolo::Retorna), "Expected 'retorna' keyword")?;
+    fn resolve_retorna_declaracao(&mut self) -> Result<Declaracao, CompilerError> {
+        self.consumir(Self::simbolo_com_posicao(Simbolo::Retorna), "Esperado palavra-chave 'retorna'")?;
 
-        let value = if self.check(Self::simbolo_com_posicao(Simbolo::PontoEVirgula)) {
+        let value = if self.compara(Self::simbolo_com_posicao(Simbolo::PontoEVirgula)) {
             None
         } else {
-            Some(self.parse_expression()?)
+            Some(self.resolve_espressao()?)
         };
 
-        self.consume(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Expected ';' after return statement")?;
+        self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a declaração de retorno")?;
 
         Ok(Declaracao::Retorna(value))
     }

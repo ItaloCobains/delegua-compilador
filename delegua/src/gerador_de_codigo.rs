@@ -180,10 +180,10 @@ impl<'ctx> CodeGen<'ctx> {
             Declaracao::ParaCada { variavel: variable, iteravel: iterable, corpo: body } => {
                 self.generate_for_each_statement(variable, iterable, body)
             }
-            Declaracao::Interromper => {
+            Declaracao::Sustar => {
                 self.generate_break_statement()
             }
-            Declaracao::Continue => {
+            Declaracao::Continua => {
                 self.generate_continue_statement()
             }
             Declaracao::ChamadaDeFuncao(expr) => {
