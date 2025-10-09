@@ -53,7 +53,7 @@ pub fn print_usage() {
     println!("Compilador Delegua");
     println!();
     println!("Uso:");
-    println!("    delegua-compiler [COMMAND]");
+    println!("    delegua-compilador [COMMAND]");
     println!();
     println!("Comandos:");
     println!("    construa <file.delegua>       Compila o arquivo para executável");
@@ -61,7 +61,7 @@ pub fn print_usage() {
     println!("    versao                      Mostra a versão do compilador");
     println!();
     println!("EXAMPLES:");
-    println!("    delegua-compiler construa program.delegua");
+    println!("    delegua-compilador construa programa.delegua");
 }
 
 pub fn print_version() {

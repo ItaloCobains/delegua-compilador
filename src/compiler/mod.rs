@@ -70,7 +70,7 @@ mod tests {
             escreva("Resultado: " + texto(soma));
         "#;
 
-        let test_filename = "test_compile.dc";
+        let test_filename = "test_compile.delegua_compilador";
         fs::write(test_filename, test_code).unwrap();
 
         let mut lexer = Lexer::new();

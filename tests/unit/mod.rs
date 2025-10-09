@@ -1,7 +1,7 @@
 #[cfg(test)]
 mod lexer_tests {
-    use dc::core::lexer::Lexer;
-    use dc::core::token::Token;
+    use delegua_compilador::core::lexer::Lexer;
+    use delegua_compilador::core::token::Token;
 
     #[test]
     fn test_tokenize_variable_declaration() {
@@ -71,9 +71,9 @@ mod lexer_tests {
 
 #[cfg(test)]
 mod parser_tests {
-    use dc::core::lexer::Lexer;
-    use dc::core::parser::Parser;
-    use dc::core::ast::{Expr, BinaryOp, Statement};
+    use delegua_compilador::core::lexer::Lexer;
+    use delegua_compilador::core::parser::Parser;
+    use delegua_compilador::core::ast::{Expr, BinaryOp, Statement};
 
     #[test]
     fn test_parse_variable_declaration() {
@@ -114,9 +114,9 @@ mod parser_tests {
 #[cfg(test)]
 mod codegen_tests {
     use inkwell::context::Context;
-    use dc::core::lexer::Lexer;
-    use dc::core::parser::Parser;
-    use dc::core::codegen::CodeGen;
+    use delegua_compilador::core::lexer::Lexer;
+    use delegua_compilador::core::parser::Parser;
+    use delegua_compilador::core::codegen::CodeGen;
 
     #[test]
     fn test_codegen_simple_variable() {
@@ -197,9 +197,9 @@ mod codegen_tests {
 #[cfg(test)]
 mod integration_tests {
     use inkwell::context::Context;
-    use dc::core::lexer::Lexer;
-    use dc::core::parser::Parser;
-    use dc::core::codegen::CodeGen;
+    use delegua_compilador::core::lexer::Lexer;
+    use delegua_compilador::core::parser::Parser;
+    use delegua_compilador::core::codegen::CodeGen;
 
     #[test]
     fn test_full_compilation_pipeline() {
@@ -231,11 +231,11 @@ mod integration_tests {
 
 #[cfg(test)]
 mod logical_operator_tests {
-    use dc::core::lexer::Lexer;
-    use dc::core::parser::Parser;
-    use dc::core::ast::{Expr, BinaryOp};
+    use delegua_compilador::core::lexer::Lexer;
+    use delegua_compilador::core::parser::Parser;
+    use delegua_compilador::core::ast::{Expr, BinaryOp};
     use inkwell::context::Context;
-    use dc::core::codegen::CodeGen;
+    use delegua_compilador::core::codegen::CodeGen;
 
     #[test]
     fn test_tokenize_logical_operators() {
@@ -295,11 +295,11 @@ mod logical_operator_tests {
 
 #[cfg(test)]
 mod leia_function_tests {
-    use dc::core::lexer::Lexer;
-    use dc::core::parser::Parser;
-    use dc::core::ast::{Expr, Statement};
+    use delegua_compilador::core::lexer::Lexer;
+    use delegua_compilador::core::parser::Parser;
+    use delegua_compilador::core::ast::{Expr, Statement};
     use inkwell::context::Context;
-    use dc::core::codegen::CodeGen;
+    use delegua_compilador::core::codegen::CodeGen;
 
     #[test]
     fn test_tokenize_leia() {

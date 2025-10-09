@@ -1,9 +1,9 @@
 #[cfg(test)]
 mod integration_tests {
     use inkwell::context::Context;
-    use dc::core::lexer::Lexer;
-    use dc::core::parser::Parser;
-    use dc::core::codegen::CodeGen;
+    use delegua_compilador::core::lexer::Lexer;
+    use delegua_compilador::core::parser::Parser;
+    use delegua_compilador::core::codegen::CodeGen;
 
     #[test]
     fn test_complete_program_execution() {
