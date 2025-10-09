@@ -1497,7 +1497,7 @@ impl<'ctx> CodeGen<'ctx> {
         Ok(obj_ptr.into())
     }
 
-    fn generate_property_access(&mut self, object: &Expressoes, property: &str) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn generate_property_access(&mut self, object: &Expressoes, _property: &str) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         let obj_val = self.generate_expression(object)?;
         let obj_ptr = obj_val.into_pointer_value();
 
@@ -1507,11 +1507,11 @@ impl<'ctx> CodeGen<'ctx> {
             "load object size"
         )?.into_int_value();
 
-        let prop_str = self.get_or_create_string_literal(property);
-        let prop_as_int = self.safe_build(
-            self.builder.build_ptr_to_int(prop_str, self.i64_type, "prop_as_int"),
-            "convert property string to int"
-        )?;
+        // let prop_str = self.get_or_create_string_literal(property);
+        // let prop_as_int = self.safe_build(
+        //     self.builder.build_ptr_to_int(prop_str, self.i64_type, "prop_as_int"),
+        //     "convert property string to int"
+        // )?;
 
         let current_function = self.builder.get_insert_block().unwrap().get_parent().unwrap();
         let loop_bb = self.context.append_basic_block(current_function, "prop_search");
@@ -1550,7 +1550,7 @@ impl<'ctx> CodeGen<'ctx> {
         )?;
 
         self.builder.position_at_end(not_found_bb);
-        let not_found_val = self.i64_type.const_int(0, false);
+        // let not_found_val = self.i64_type.const_int(0, false);
 
         self.builder.position_at_end(found_bb);
         let found_val = self.i64_type.const_int(42, false); // Placeholder value

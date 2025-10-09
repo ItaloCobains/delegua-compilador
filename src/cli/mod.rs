@@ -60,7 +60,7 @@ pub fn print_usage() {
     println!("    ajuda                         Mostra esta mensagem de ajuda");
     println!("    versao                      Mostra a versão do compilador");
     println!();
-    println!("EXAMPLES:");
+    println!("Exemplo:");
     println!("    delegua-compilador construa programa.delegua");
 }
 
