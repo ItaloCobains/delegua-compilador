@@ -2,7 +2,7 @@ use std::fs;
 use std::process::Command;
 use inkwell::context::Context;
 
-use crate::core::lexer::Lexer;
+use crate::core::lexer::Lexador;
 use crate::core::parser::Parser;
 use crate::core::codegen::CodeGen;
 use crate::core::error::CompilerError;
@@ -13,8 +13,8 @@ pub fn compile_file(filename: &str) -> Result<(), CompilerError> {
     let source_code = fs::read_to_string(filename)
         .map_err(|e| CompilerError::Io(e.to_string()))?;
 
-    let mut lexer = Lexer::new();
-    let tokens = lexer.tokenize(&source_code);
+    let mut lexer = Lexador::new();
+    let tokens = lexer.analisar(&source_code);
     let mut parser = Parser::new(tokens);
     let ast = parser.parse()?;
 
@@ -73,8 +73,8 @@ mod tests {
         let test_filename = "test_compile.delegua_compilador";
         fs::write(test_filename, test_code).unwrap();
 
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize(test_code);
+        let mut lexer = Lexador::new();
+        let tokens = lexer.analisar(test_code);
         let mut parser = Parser::new(tokens);
         let ast = parser.parse().unwrap();
 

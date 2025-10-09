@@ -1,307 +1,344 @@
 use crate::core::token::{Simbolo, Posicao};
 
+/// Reservatório de objetos `Posicao` reutilizáveis para otimizar a alocação de memória.
+/// 
+/// Durante a análise léxica, muitas posições são criadas e descartadas. Este pool
+/// mantém posições já alocadas que podem ser reutilizadas, reduzindo a pressão no
+/// alocador de memória e melhorando a performance.
 #[derive(Default)]
-struct TokenPool {
-    positions: Vec<Posicao>,
-    pos_index: usize,
+struct ReservatorioSimbolos {
+    /// Vetor de posições pré-alocadas.
+    posicoes: Vec<Posicao>,
+    /// Índice da próxima posição disponível no vetor.
+    indice_posicao: usize,
 }
 
-impl TokenPool {
-    fn new(capacity: usize) -> Self {
+impl ReservatorioSimbolos {
+    /// Cria um novo reservatório com a capacidade inicial pre-alocada.
+    /// ### Argumentos
+    /// * `capacidade` - Capacidade inicial do vetor de posições.
+    fn new(capacidade: usize) -> Self {
         Self {
-            positions: Vec::with_capacity(capacity),
-            pos_index: 0,
+            posicoes: Vec::with_capacity(capacidade),
+            indice_posicao: 0,
         }
     }
 
-    fn get_position(&mut self, line: u32, column: u32, offset: usize) -> Posicao {
-        if self.pos_index < self.positions.len() {
-            let pos = &mut self.positions[self.pos_index];
-            pos.linha = line;
-            pos.coluna = column;
-            pos.deslocamento = offset;
-            self.pos_index += 1;
+    /// Obtém uma posição do reservatório, reutilizando uma existente ou criando uma nova.
+    /// ### Argumentos
+    /// * `linha` - Linha da posição.
+    /// * `coluna` - Coluna da posição.
+    /// * `deslocamento` - Deslocamento da posição.
+    /// ### Retorna
+    /// A posição solicitada.
+    fn pega_posicao(&mut self, linha: u32, coluna: u32, deslocamento: usize) -> Posicao {
+        if self.indice_posicao < self.posicoes.len() {
+            let pos: &mut Posicao = &mut self.posicoes[self.indice_posicao];
+            pos.linha = linha;
+            pos.coluna = coluna;
+            pos.deslocamento = deslocamento;
+            self.indice_posicao += 1;
             *pos
         } else {
-            let pos = Posicao { linha: line, coluna: column, deslocamento: offset };
-            self.positions.push(pos);
-            self.pos_index += 1;
+            let pos: Posicao = Posicao { linha, coluna, deslocamento };
+            self.posicoes.push(pos);
+            self.indice_posicao += 1;
             pos
         }
     }
 
-    fn reset(&mut self) {
-        self.pos_index = 0;
+    /// Reseta o índice do reservatório para reutilizar as posições desde o início.
+    /// Deve ser chamado no início de cada nova análise léxica.
+    /// ### Notas
+    /// Esta função não limpa o vetor de posições, apenas reseta o índice.
+    /// As posições antigas permanecem alocadas para reutilização futura.
+    fn reseta(&mut self) {
+        self.indice_posicao = 0;
     }
 }
 
-pub struct Lexer<'a> {
-    input: &'a str,
-    chars: std::iter::Peekable<std::str::Chars<'a>>,
-    position: Posicao,
-    token_pool: TokenPool,
+/// Analisador léxico para a linguagem Delegua.
+/// Converte uma string de entrada em uma sequência de tokens.
+pub struct Lexador<'a> {
+    /// String de entrada a ser analisada.
+    entrada: &'a str,
+    /// Iterador sobre os caracteres da string de entrada.
+    caracteres: std::iter::Peekable<std::str::Chars<'a>>,
+    /// Posição atual na string de entrada.
+    posicao: Posicao,
+    /// Reservatório de posições para otimização de alocação.
+    reservatorio_simbolos: ReservatorioSimbolos,
 }
 
-impl<'a> Lexer<'a> {
+impl<'a> Lexador<'a> {
+    /// Cria um novo analisador léxico.
+    /// ### Retorna
+    /// Uma instância do analisador léxico.
     pub fn new() -> Self {
         Self {
-            input: "",
-            chars: "".chars().peekable(),
-            position: Posicao { linha: 1, coluna: 1, deslocamento: 0 },
-            token_pool: TokenPool::new(1024), // Pre-allocate for 1024 tokens
+            entrada: "",
+            caracteres: "".chars().peekable(),
+            posicao: Posicao { linha: 1, coluna: 1, deslocamento: 0 },
+            reservatorio_simbolos: ReservatorioSimbolos::new(1024), 
         }
     }
 
-    pub fn tokenize(&mut self, input: &'a str) -> Vec<Simbolo<'a>> {
-        self.input = input;
-        self.chars = input.chars().peekable();
-        self.position = Posicao { linha: 1, coluna: 1, deslocamento: 0 };
-        self.token_pool.reset();
+    /// Analisa a string de entrada e retorna uma lista de tokens.
+    /// ### Argumentos
+    /// * `entrada` - String de entrada a ser analisada.
+    /// ### Retorna
+    /// Vetor de simbolos resultantes da análise.
+    pub fn analisar(&mut self, entrada: &'a str) -> Vec<Simbolo<'a>> {
+        self.entrada = entrada;
+        self.caracteres = entrada.chars().peekable();
+        self.posicao = Posicao { linha: 1, coluna: 1, deslocamento: 0 };
+        self.reservatorio_simbolos.reseta();
 
-        let mut tokens = Vec::with_capacity(256); // Pre-allocate reasonable capacity
+        let mut simbolos = Vec::with_capacity(256);
 
-        while let Some(&ch) = self.chars.peek() {
+        while let Some(&ch) = self.caracteres.peek() {
             match ch {
                 ' ' | '\t' | '\r' => {
-                    self.advance();
+                    self.avancar();
                 }
                 '\n' => {
-                    self.position.linha += 1;
-                    self.position.coluna = 1;
-                    self.advance();
+                    self.posicao.linha += 1;
+                    self.posicao.coluna = 1;
+                    self.avancar();
                 }
 
                 '/' => {
-                    self.advance();
-                    if let Some('/') = self.chars.peek() {
-                        self.advance();
-                        self.skip_comment();
+                    self.avancar();
+                    if let Some('/') = self.caracteres.peek() {
+                        self.avancar();
+                        self.pula_comentario();
                     } else {
-                        tokens.push(Simbolo::Divisao(self.get_position()));
+                        simbolos.push(Simbolo::Divisao(self.pega_posicao()));
                     }
                 }
 
                 '+' => {
-                    self.advance();
-                    if let Some('+') = self.chars.peek() {
-                        self.advance();
-                        tokens.push(Simbolo::Incremento(self.get_position()));
+                    self.avancar();
+                    if let Some('+') = self.caracteres.peek() {
+                        self.avancar();
+                        simbolos.push(Simbolo::Incremento(self.pega_posicao()));
                     } else {
-                        tokens.push(Simbolo::Adicao(self.get_position()));
+                        simbolos.push(Simbolo::Adicao(self.pega_posicao()));
                     }
                 }
                 '-' => {
-                    self.advance();
-                    if let Some('-') = self.chars.peek() {
-                        self.advance();
-                        tokens.push(Simbolo::Decremento(self.get_position()));
+                    self.avancar();
+                    if let Some('-') = self.caracteres.peek() {
+                        self.avancar();
+                        simbolos.push(Simbolo::Decremento(self.pega_posicao()));
                     } else {
-                        tokens.push(Simbolo::Subtracao(self.get_position()));
+                        simbolos.push(Simbolo::Subtracao(self.pega_posicao()));
                     }
                 }
                 '*' => {
-                    self.advance();
-                    if let Some('*') = self.chars.peek() {
-                        self.advance();
-                        tokens.push(Simbolo::Potencia(self.get_position()));
+                    self.avancar();
+                    if let Some('*') = self.caracteres.peek() {
+                        self.avancar();
+                        simbolos.push(Simbolo::Potencia(self.pega_posicao()));
                     } else {
-                        tokens.push(Simbolo::Multiplicacao(self.get_position()));
+                        simbolos.push(Simbolo::Multiplicacao(self.pega_posicao()));
                     }
                 }
-                '%' => { self.advance(); tokens.push(Simbolo::Modulo(self.get_position())); }
+                '%' => { self.avancar(); simbolos.push(Simbolo::Modulo(self.pega_posicao())); }
                 '=' => {
-                    self.advance();
-                    if let Some('=') = self.chars.peek() {
-                        self.advance();
-                        tokens.push(Simbolo::Igual(self.get_position()));
+                    self.avancar();
+                    if let Some('=') = self.caracteres.peek() {
+                        self.avancar();
+                        simbolos.push(Simbolo::Igual(self.pega_posicao()));
                     } else {
-                        tokens.push(Simbolo::Atribuir(self.get_position()));
+                        simbolos.push(Simbolo::Atribuir(self.pega_posicao()));
                     }
                 }
                 '!' => {
-                    self.advance();
-                    if let Some('=') = self.chars.peek() {
-                        self.advance();
-                        tokens.push(Simbolo::NaoIgual(self.get_position()));
+                    self.avancar();
+                    if let Some('=') = self.caracteres.peek() {
+                        self.avancar();
+                        simbolos.push(Simbolo::NaoIgual(self.pega_posicao()));
                     } else {
-                        tokens.push(Simbolo::Error('!', self.get_position()));
+                        simbolos.push(Simbolo::Error('!', self.pega_posicao()));
                     }
                 }
                 '<' => {
-                    self.advance();
-                    if let Some('=') = self.chars.peek() {
-                        self.advance();
-                        tokens.push(Simbolo::MenorIgual(self.get_position()));
+                    self.avancar();
+                    if let Some('=') = self.caracteres.peek() {
+                        self.avancar();
+                        simbolos.push(Simbolo::MenorIgual(self.pega_posicao()));
                     } else {
-                        tokens.push(Simbolo::Menor(self.get_position()));
+                        simbolos.push(Simbolo::Menor(self.pega_posicao()));
                     }
                 }
                 '>' => {
-                    self.advance();
-                    if let Some('=') = self.chars.peek() {
-                        self.advance();
-                        tokens.push(Simbolo::MaiorIgual(self.get_position()));
+                    self.avancar();
+                    if let Some('=') = self.caracteres.peek() {
+                        self.avancar();
+                        simbolos.push(Simbolo::MaiorIgual(self.pega_posicao()));
                     } else {
-                        tokens.push(Simbolo::Maior(self.get_position()));
+                        simbolos.push(Simbolo::Maior(self.pega_posicao()));
                     }
                 }
-                ';' => { self.advance(); tokens.push(Simbolo::PontoEVirgula(self.get_position())); }
-                '(' => { self.advance(); tokens.push(Simbolo::ParenteseEsquerdo(self.get_position())); }
-                ')' => { self.advance(); tokens.push(Simbolo::ParenteseDireito(self.get_position())); }
-                '{' => { self.advance(); tokens.push(Simbolo::ChaveEsquerda(self.get_position())); }
-                '}' => { self.advance(); tokens.push(Simbolo::ChaveDireita(self.get_position())); }
-                '[' => { self.advance(); tokens.push(Simbolo::ColcheteEsquerdo(self.get_position())); }
-                ']' => { self.advance(); tokens.push(Simbolo::ColcheteDireito(self.get_position())); }
-                ',' => { self.advance(); tokens.push(Simbolo::Virgula(self.get_position())); }
-                ':' => { self.advance(); tokens.push(Simbolo::DoisPontos(self.get_position())); }
+                ';' => { self.avancar(); simbolos.push(Simbolo::PontoEVirgula(self.pega_posicao())); }
+                '(' => { self.avancar(); simbolos.push(Simbolo::ParenteseEsquerdo(self.pega_posicao())); }
+                ')' => { self.avancar(); simbolos.push(Simbolo::ParenteseDireito(self.pega_posicao())); }
+                '{' => { self.avancar(); simbolos.push(Simbolo::ChaveEsquerda(self.pega_posicao())); }
+                '}' => { self.avancar(); simbolos.push(Simbolo::ChaveDireita(self.pega_posicao())); }
+                '[' => { self.avancar(); simbolos.push(Simbolo::ColcheteEsquerdo(self.pega_posicao())); }
+                ']' => { self.avancar(); simbolos.push(Simbolo::ColcheteDireito(self.pega_posicao())); }
+                ',' => { self.avancar(); simbolos.push(Simbolo::Virgula(self.pega_posicao())); }
+                ':' => { self.avancar(); simbolos.push(Simbolo::DoisPontos(self.pega_posicao())); }
                 '.' => {
-                    if let Some(next_ch) = self.chars.clone().nth(1) {
+                    if let Some(next_ch) = self.caracteres.clone().nth(1) {
                         if next_ch.is_ascii_digit() {
-                            let ch = self.chars.next().unwrap();
-                            self.position.coluna += 1;
-                            self.position.deslocamento += ch.len_utf8();
-                            tokens.push(Simbolo::Error(ch, self.get_position()));
+                            let ch = self.caracteres.next().unwrap();
+                            self.posicao.coluna += 1;
+                            self.posicao.deslocamento += ch.len_utf8();
+                            simbolos.push(Simbolo::Error(ch, self.pega_posicao()));
+                            // Hoje da erro, mas no futuro pode ser o inicio de um numero float
                         } else {
-                            self.advance();
-                            tokens.push(Simbolo::Ponto(self.get_position()));
+                            self.avancar();
+                            simbolos.push(Simbolo::Ponto(self.pega_posicao()));
                         }
                     } else {
-                        self.advance();
-                        tokens.push(Simbolo::Ponto(self.get_position()));
+                        self.avancar();
+                        simbolos.push(Simbolo::Ponto(self.pega_posicao()));
                     }
                 }
 
                 '"' => {
-                    if let Some(token) = self.lex_string() {
-                        tokens.push(token);
+                    if let Some(token) = self.texto_string() {
+                        simbolos.push(token);
                     }
                 }
 
-                '0'..='9' => tokens.push(self.lex_number()),
+                '0'..='9' => simbolos.push(self.resolve_numero()),
 
-                'a'..='z' | 'A'..='Z' | '_' => tokens.push(self.lex_identifier_or_keyword()),
+                'a'..='z' | 'A'..='Z' | '_' => simbolos.push(self.resolve_identificador_ou_palavra_chave()),
 
                 _ => {
-                    let ch = self.chars.next().unwrap();
-                    self.position.coluna += 1;
-                    self.position.deslocamento += ch.len_utf8();
-                    tokens.push(Simbolo::Error(ch, self.get_position()));
+                    let ch = self.caracteres.next().unwrap();
+                    self.posicao.coluna += 1;
+                    self.posicao.deslocamento += ch.len_utf8();
+                    simbolos.push(Simbolo::Error(ch, self.pega_posicao()));
                 }
             }
         }
 
-        tokens.push(Simbolo::EOF(self.get_position()));
-        tokens
+        simbolos.push(Simbolo::EOF(self.pega_posicao()));
+        simbolos
     }
 
-    fn advance(&mut self) {
-        if let Some(ch) = self.chars.next() {
-            self.position.coluna += 1;
-            self.position.deslocamento += ch.len_utf8();
+    fn avancar(&mut self) {
+        if let Some(ch) = self.caracteres.next() {
+            self.posicao.coluna += 1;
+            self.posicao.deslocamento += ch.len_utf8();
         }
     }
 
-    fn get_position(&mut self) -> Posicao {
-        self.token_pool.get_position(self.position.linha, self.position.coluna, self.position.deslocamento)
+    fn pega_posicao(&mut self) -> Posicao {
+        self.reservatorio_simbolos.pega_posicao(self.posicao.linha, self.posicao.coluna, self.posicao.deslocamento)
     }
 
-    fn lex_number(&mut self) -> Simbolo<'a> {
-        let start_pos = self.get_position();
-        let start_offset = self.position.deslocamento;
+    fn resolve_numero(&mut self) -> Simbolo<'a> {
+        let posicao_inicio = self.pega_posicao();
+        let inicio_deslocamento = self.posicao.deslocamento;
 
-        while let Some(&ch) = self.chars.peek() {
+        while let Some(&ch) = self.caracteres.peek() {
             if ch.is_ascii_digit() {
-                self.advance();
+                self.avancar();
             } else {
                 break;
             }
         }
 
-        let num_str = &self.input[start_offset..self.position.deslocamento];
-        let value = num_str.parse().unwrap_or(0);
-        Simbolo::Number(value, start_pos)
+        let num_str = &self.entrada[inicio_deslocamento..self.posicao.deslocamento];
+        let valor = num_str.parse().unwrap_or(0);
+        Simbolo::Number(valor, posicao_inicio)
     }
 
-    fn lex_string(&mut self) -> Option<Simbolo<'a>> {
-        let start_pos = self.get_position();
-        self.advance(); // Skip opening quote
-        let start_offset = self.position.deslocamento;
+    fn texto_string(&mut self) -> Option<Simbolo<'a>> {
+        let posicao_inicio = self.pega_posicao();
+        self.avancar(); // pula a aspas iniciais
+        let inicio_deslocamento = self.posicao.deslocamento;
 
-        while let Some(&ch) = self.chars.peek() {
+        while let Some(&ch) = self.caracteres.peek() {
             if ch == '"' {
-                let end_offset = self.position.deslocamento;
-                self.advance(); // Skip closing quote
-                let string_slice = &self.input[start_offset..end_offset];
-                return Some(Simbolo::Texto(string_slice, start_pos));
+                let final_deslocamento = self.posicao.deslocamento;
+                self.avancar(); // pula a aspas finais
+                let string_slice = &self.entrada[inicio_deslocamento..final_deslocamento];
+                return Some(Simbolo::Texto(string_slice, posicao_inicio));
             }
             if ch == '\n' {
-                return Some(Simbolo::Error('"', start_pos));
+                return Some(Simbolo::Error('"', posicao_inicio));
             }
-            self.advance();
+            self.avancar();
         }
 
-        Some(Simbolo::Error('"', start_pos))
+        Some(Simbolo::Error('"', posicao_inicio))
     }
 
-    fn lex_identifier_or_keyword(&mut self) -> Simbolo<'a> {
-        let start_pos = self.get_position();
-        let start_offset = self.position.deslocamento;
+    fn resolve_identificador_ou_palavra_chave(&mut self) -> Simbolo<'a> {
+        let posicao_inicio = self.pega_posicao();
+        let inicio_deslocamento = self.posicao.deslocamento;
 
-        while let Some(&ch) = self.chars.peek() {
+        while let Some(&ch) = self.caracteres.peek() {
             if ch.is_ascii_alphabetic() || ch.is_ascii_digit() || ch == '_' {
-                self.advance();
+                self.avancar();
             } else {
                 break;
             }
         }
 
-        let ident_slice = &self.input[start_offset..self.position.deslocamento];
+        let ident_slice = &self.entrada[inicio_deslocamento..self.posicao.deslocamento];
 
         match ident_slice {
-            "var" => Simbolo::Variavel(start_pos),
-            "escreva" => Simbolo::Escreva(start_pos),
-            "texto" => Simbolo::TextoFuncao(start_pos),
-            "leia" => Simbolo::Leia(start_pos),
-            "comprimento" => Simbolo::Comprimento(start_pos),
-            "maiuscula" => Simbolo::Maiuscula(start_pos),
-            "minuscula" => Simbolo::Minuscula(start_pos),
-            "absoluto" => Simbolo::Absoluto(start_pos),
-            "potencia" => Simbolo::PotenciaFuncao(start_pos),
-            "raiz_quadrada" => Simbolo::RaizQuadrada(start_pos),
-            "importar" => Simbolo::Importacao(start_pos),
-            "se" => Simbolo::Se(start_pos),
-            "senao" => self.handle_senao_se(start_pos),
-            "escolha" => Simbolo::Escolha(start_pos),
-            "caso" => Simbolo::Caso(start_pos),
-            "padrao" => Simbolo::Padrao(start_pos),
-            "enquanto" => Simbolo::Enquanto(start_pos),
-            "fazer" => Simbolo::Fazer(start_pos),
-            "para" => self.handle_para_cada(start_pos),
-            "sustar" => Simbolo::Sustar(start_pos),
-            "continua" => Simbolo::Continua(start_pos),
-            "verdadeiro" => Simbolo::Verdadeiro(start_pos),
-            "falso" => Simbolo::Falso(start_pos),
-            "funcao" => Simbolo::Funcao(start_pos),
-            "função" => Simbolo::Funcao(start_pos), 
-            "retorna" => Simbolo::Retorna(start_pos),
-            "e" => Simbolo::E(start_pos),
-            "ou" => Simbolo::Ou(start_pos),
-            "não" => Simbolo::Nao(start_pos),
-            "nao" => Simbolo::Nao(start_pos),
-            _ => Simbolo::Identificador(ident_slice, start_pos),
+            "var" => Simbolo::Variavel(posicao_inicio),
+            "escreva" => Simbolo::Escreva(posicao_inicio),
+            "texto" => Simbolo::TextoFuncao(posicao_inicio),
+            "leia" => Simbolo::Leia(posicao_inicio),
+            "comprimento" => Simbolo::Comprimento(posicao_inicio),
+            "maiuscula" => Simbolo::Maiuscula(posicao_inicio),
+            "minuscula" => Simbolo::Minuscula(posicao_inicio),
+            "absoluto" => Simbolo::Absoluto(posicao_inicio),
+            "potencia" => Simbolo::PotenciaFuncao(posicao_inicio),
+            "raiz_quadrada" => Simbolo::RaizQuadrada(posicao_inicio),
+            "importar" => Simbolo::Importacao(posicao_inicio),
+            "se" => Simbolo::Se(posicao_inicio),
+            "senao" => self.resolve_senao_se(posicao_inicio),
+            "escolha" => Simbolo::Escolha(posicao_inicio),
+            "caso" => Simbolo::Caso(posicao_inicio),
+            "padrao" => Simbolo::Padrao(posicao_inicio),
+            "enquanto" => Simbolo::Enquanto(posicao_inicio),
+            "fazer" => Simbolo::Fazer(posicao_inicio),
+            "para" => self.resolve_para_cada(posicao_inicio),
+            "sustar" => Simbolo::Sustar(posicao_inicio),
+            "continua" => Simbolo::Continua(posicao_inicio),
+            "verdadeiro" => Simbolo::Verdadeiro(posicao_inicio),
+            "falso" => Simbolo::Falso(posicao_inicio),
+            "funcao" => Simbolo::Funcao(posicao_inicio),
+            "função" => Simbolo::Funcao(posicao_inicio), 
+            "retorna" => Simbolo::Retorna(posicao_inicio),
+            "e" => Simbolo::E(posicao_inicio),
+            "ou" => Simbolo::Ou(posicao_inicio),
+            "não" => Simbolo::Nao(posicao_inicio),
+            "nao" => Simbolo::Nao(posicao_inicio),
+            _ => Simbolo::Identificador(ident_slice, posicao_inicio),
         }
     }
 
-    fn handle_senao_se(&mut self, start_pos: Posicao) -> Simbolo<'a> {
-        while let Some(&ch) = self.chars.peek() {
+    fn resolve_senao_se(&mut self, inicio_posicao: Posicao) -> Simbolo<'a> {
+        while let Some(&ch) = self.caracteres.peek() {
             if ch.is_whitespace() {
-                self.advance();
+                self.avancar();
             } else {
                 break;
             }
         }
 
-        let mut temp_chars = self.chars.clone();
+        let mut temp_chars = self.caracteres.clone();
         let mut next_word = String::new();
         while let Some(&ch) = temp_chars.peek() {
             if ch.is_alphabetic() {
@@ -314,24 +351,24 @@ impl<'a> Lexer<'a> {
 
         if next_word == "se" {
             for _ in 0.."se".len() {
-                self.advance();
+                self.avancar();
             }
-            Simbolo::SenaoSe(start_pos)
+            Simbolo::SenaoSe(inicio_posicao)
         } else {
-            Simbolo::Senao(start_pos)
+            Simbolo::Senao(inicio_posicao)
         }
     }
 
-    fn handle_para_cada(&mut self, start_pos: Posicao) -> Simbolo<'a> {
-        while let Some(&ch) = self.chars.peek() {
+    fn resolve_para_cada(&mut self, inicio_posicao: Posicao) -> Simbolo<'a> {
+        while let Some(&ch) = self.caracteres.peek() {
             if ch.is_whitespace() {
-                self.advance();
+                self.avancar();
             } else {
                 break;
             }
         }
 
-        let mut temp_chars = self.chars.clone();
+        let mut temp_chars = self.caracteres.clone();
         let mut next_word = String::new();
         while let Some(&ch) = temp_chars.peek() {
             if ch.is_alphabetic() {
@@ -344,20 +381,20 @@ impl<'a> Lexer<'a> {
 
         if next_word == "cada" {
             for _ in 0.."cada".len() {
-                self.advance();
+                self.avancar();
             }
-            Simbolo::ParaCada(start_pos)
+            Simbolo::ParaCada(inicio_posicao)
         } else {
-            Simbolo::Para(start_pos)
+            Simbolo::Para(inicio_posicao)
         }
     }
 
-    fn skip_comment(&mut self) {
-        while let Some(&ch) = self.chars.peek() {
+    fn pula_comentario(&mut self) {
+        while let Some(&ch) = self.caracteres.peek() {
             if ch == '\n' {
                 break;
             }
-            self.advance();
+            self.avancar();
         }
     }
 }
@@ -368,8 +405,8 @@ mod tests {
 
     #[test]
     fn test_tokenize_variable_declaration() {
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("var x = 42;");
+        let mut lexer = Lexador::new();
+        let tokens = lexer.analisar("var x = 42;");
         assert_eq!(tokens.len(), 6);
         assert!(matches!(tokens[0], Simbolo::Variavel(_)));
         assert!(matches!(tokens[1], Simbolo::Identificador("x", _)));
@@ -381,8 +418,8 @@ mod tests {
 
     #[test]
     fn test_tokenize_string_literal() {
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("\"Hello World\"");
+        let mut lexer = Lexador::new();
+        let tokens = lexer.analisar("\"Hello World\"");
         let expected = vec![
             Simbolo::Texto("Hello World", Posicao { linha: 1, coluna: 1, deslocamento: 0 }),
             Simbolo::EOF(Posicao { linha: 1, coluna: 14, deslocamento: 13 })
@@ -392,8 +429,8 @@ mod tests {
 
     #[test]
     fn test_tokenize_arithmetic_expression() {
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("a + b * c");
+        let mut lexer = Lexador::new();
+        let tokens = lexer.analisar("a + b * c");
         assert_eq!(tokens.len(), 6);
         assert!(matches!(tokens[0], Simbolo::Identificador("a", _)));
         assert!(matches!(tokens[1], Simbolo::Adicao(_)));
@@ -405,8 +442,8 @@ mod tests {
 
     #[test]
     fn test_tokenize_function_call() {
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("escreva(\"test\")");
+        let mut lexer = Lexador::new();
+        let tokens = lexer.analisar("escreva(\"test\")");
         assert_eq!(tokens.len(), 5);
         assert!(matches!(tokens[0], Simbolo::Escreva(_)));
         assert!(matches!(tokens[1], Simbolo::ParenteseEsquerdo(_)));
@@ -417,8 +454,8 @@ mod tests {
 
     #[test]
     fn test_tokenize_with_comments() {
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("var x = 1; // comment\nvar y = 2;");
+        let mut lexer = Lexador::new();
+        let tokens = lexer.analisar("var x = 1; // comment\nvar y = 2;");
         assert_eq!(tokens.len(), 11);
         assert!(matches!(tokens[0], Simbolo::Variavel(_)));
         assert!(matches!(tokens[1], Simbolo::Identificador("x", _)));

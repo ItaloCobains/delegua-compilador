@@ -2,8 +2,6 @@ use std::fmt;
 
 #[derive(Debug, Clone)]
 pub enum CompilerError {
-    Lexer(String),
-
     Parser(String),
 
     CodeGen(String),
@@ -14,7 +12,6 @@ pub enum CompilerError {
 impl fmt::Display for CompilerError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            CompilerError::Lexer(msg) => write!(f, "Lexer Error: {}", msg),
             CompilerError::Parser(msg) => write!(f, "Parser Error: {}", msg),
             CompilerError::CodeGen(msg) => write!(f, "Code Generation Error: {}", msg),
             CompilerError::Io(err) => write!(f, "I/O Error: {}", err),

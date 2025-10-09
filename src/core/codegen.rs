@@ -2004,7 +2004,7 @@ impl<'ctx> CodeGen<'ctx> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::lexer::Lexer;
+    use crate::core::lexer::Lexador;
     use crate::core::parser::Parser;
 
     #[test]
@@ -2012,8 +2012,8 @@ mod tests {
         let context = Context::create();
         let mut codegen = CodeGen::new(&context, "test").unwrap();
 
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("var a = 42;");
+        let mut lexer = Lexador::new();
+        let tokens = lexer.analisar("var a = 42;");
         let mut parser = Parser::new(tokens);
         let program = parser.parse().unwrap();
 
@@ -2029,8 +2029,8 @@ mod tests {
         let context = Context::create();
         let mut codegen = CodeGen::new(&context, "test").unwrap();
 
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("var a = 10; var b = 5; var c = 2; var result = a + b * c;");
+        let mut lexer = Lexador::new();
+        let tokens = lexer.analisar("var a = 10; var b = 5; var c = 2; var result = a + b * c;");
         let mut parser = Parser::new(tokens);
         let program = parser.parse().unwrap();
 
@@ -2046,8 +2046,8 @@ mod tests {
         let context = Context::create();
         let mut codegen = CodeGen::new(&context, "test").unwrap();
 
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("var msg = \"Hello World\";");
+        let mut lexer = Lexador::new();
+        let tokens = lexer.analisar("var msg = \"Hello World\";");
         let mut parser = Parser::new(tokens);
         let program = parser.parse().unwrap();
 
@@ -2062,14 +2062,14 @@ mod tests {
         let context = Context::create();
         let mut codegen = CodeGen::new(&context, "test").unwrap();
 
-        let mut lexer = Lexer::new();
+        let mut lexer = Lexador::new();
         let code = r#"
             var a = 10;
             var b = 5;
             var soma = a + b;
             escreva("Resultado: " + texto(soma));
         "#;
-        let tokens = lexer.tokenize(code);
+        let tokens = lexer.analisar(code);
         let mut parser = Parser::new(tokens);
         let program = parser.parse().unwrap();
 
@@ -2087,8 +2087,8 @@ mod tests {
         let context = Context::create();
         let mut codegen = CodeGen::new(&context, "test").unwrap();
 
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("var arr = [1, 2, 3];");
+        let mut lexer = Lexador::new();
+        let tokens = lexer.analisar("var arr = [1, 2, 3];");
         let mut parser = Parser::new(tokens);
         let program = parser.parse().unwrap();
 
@@ -2108,8 +2108,8 @@ mod tests {
         let context = Context::create();
         let mut codegen = CodeGen::new(&context, "test").unwrap();
 
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("var arr = [10, 20, 30]; var x = arr[1];");
+        let mut lexer = Lexador::new();
+        let tokens = lexer.analisar("var arr = [10, 20, 30]; var x = arr[1];");
         let mut parser = Parser::new(tokens);
         let program = parser.parse().unwrap();
 
@@ -2125,8 +2125,8 @@ mod tests {
         let context = Context::create();
         let mut codegen = CodeGen::new(&context, "test").unwrap();
 
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("var arr = [];");
+        let mut lexer = Lexador::new();
+        let tokens = lexer.analisar("var arr = [];");
         let mut parser = Parser::new(tokens);
         let program = parser.parse().unwrap();
 
@@ -2141,8 +2141,8 @@ mod tests {
         let context = Context::create();
         let mut codegen = CodeGen::new(&context, "test").unwrap();
 
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("var a = 5; var b = 10; var arr = [a + b, a * b];");
+        let mut lexer = Lexador::new();
+        let tokens = lexer.analisar("var a = 5; var b = 10; var arr = [a + b, a * b];");
         let mut parser = Parser::new(tokens);
         let program = parser.parse().unwrap();
 

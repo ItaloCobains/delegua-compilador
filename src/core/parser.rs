@@ -1052,12 +1052,12 @@ impl<'a> Parser<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::core::lexer::Lexer;
+    use crate::core::lexer::Lexador;
 
     #[test]
     fn test_parse_variable_declaration() {
-        let mut lexer = Lexer::new();
-        let tokens = lexer.tokenize("var x = 42;");
+        let mut lexer = Lexador::new();
+        let tokens = lexer.analisar("var x = 42;");
         let mut parser = Parser::new(tokens);
 
         let program = parser.parse().unwrap();
@@ -1074,13 +1074,13 @@ mod tests {
 
     #[test]
     fn test_parse_complex_program() {
-        let mut lexer = Lexer::new();
+        let mut lexer = Lexador::new();
         let code = r#"
             var a = 10;
             var b = 5;
             escreva("Sum: " + texto(a + b));
         "#;
-        let tokens = lexer.tokenize(code);
+        let tokens = lexer.analisar(code);
         let mut parser = Parser::new(tokens);
 
         let program = parser.parse().unwrap();
