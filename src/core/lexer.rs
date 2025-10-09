@@ -1,8 +1,8 @@
-use crate::core::token::{Token, Position};
+use crate::core::token::{Simbolo, Posicao};
 
 #[derive(Default)]
 struct TokenPool {
-    positions: Vec<Position>,
+    positions: Vec<Posicao>,
     pos_index: usize,
 }
 
@@ -14,16 +14,16 @@ impl TokenPool {
         }
     }
 
-    fn get_position(&mut self, line: u32, column: u32, offset: usize) -> Position {
+    fn get_position(&mut self, line: u32, column: u32, offset: usize) -> Posicao {
         if self.pos_index < self.positions.len() {
             let pos = &mut self.positions[self.pos_index];
-            pos.line = line;
-            pos.column = column;
-            pos.offset = offset;
+            pos.linha = line;
+            pos.coluna = column;
+            pos.deslocamento = offset;
             self.pos_index += 1;
             *pos
         } else {
-            let pos = Position { line, column, offset };
+            let pos = Posicao { linha: line, coluna: column, deslocamento: offset };
             self.positions.push(pos);
             self.pos_index += 1;
             pos
@@ -38,7 +38,7 @@ impl TokenPool {
 pub struct Lexer<'a> {
     input: &'a str,
     chars: std::iter::Peekable<std::str::Chars<'a>>,
-    position: Position,
+    position: Posicao,
     token_pool: TokenPool,
 }
 
@@ -47,15 +47,15 @@ impl<'a> Lexer<'a> {
         Self {
             input: "",
             chars: "".chars().peekable(),
-            position: Position { line: 1, column: 1, offset: 0 },
+            position: Posicao { linha: 1, coluna: 1, deslocamento: 0 },
             token_pool: TokenPool::new(1024), // Pre-allocate for 1024 tokens
         }
     }
 
-    pub fn tokenize(&mut self, input: &'a str) -> Vec<Token<'a>> {
+    pub fn tokenize(&mut self, input: &'a str) -> Vec<Simbolo<'a>> {
         self.input = input;
         self.chars = input.chars().peekable();
-        self.position = Position { line: 1, column: 1, offset: 0 };
+        self.position = Posicao { linha: 1, coluna: 1, deslocamento: 0 };
         self.token_pool.reset();
 
         let mut tokens = Vec::with_capacity(256); // Pre-allocate reasonable capacity
@@ -66,8 +66,8 @@ impl<'a> Lexer<'a> {
                     self.advance();
                 }
                 '\n' => {
-                    self.position.line += 1;
-                    self.position.column = 1;
+                    self.position.linha += 1;
+                    self.position.coluna = 1;
                     self.advance();
                 }
 
@@ -77,7 +77,7 @@ impl<'a> Lexer<'a> {
                         self.advance();
                         self.skip_comment();
                     } else {
-                        tokens.push(Token::Divide(self.get_position()));
+                        tokens.push(Simbolo::Divisao(self.get_position()));
                     }
                 }
 
@@ -85,89 +85,89 @@ impl<'a> Lexer<'a> {
                     self.advance();
                     if let Some('+') = self.chars.peek() {
                         self.advance();
-                        tokens.push(Token::Increment(self.get_position()));
+                        tokens.push(Simbolo::Incremento(self.get_position()));
                     } else {
-                        tokens.push(Token::Plus(self.get_position()));
+                        tokens.push(Simbolo::Adicao(self.get_position()));
                     }
                 }
                 '-' => {
                     self.advance();
                     if let Some('-') = self.chars.peek() {
                         self.advance();
-                        tokens.push(Token::Decrement(self.get_position()));
+                        tokens.push(Simbolo::Decremento(self.get_position()));
                     } else {
-                        tokens.push(Token::Minus(self.get_position()));
+                        tokens.push(Simbolo::Subtracao(self.get_position()));
                     }
                 }
                 '*' => {
                     self.advance();
                     if let Some('*') = self.chars.peek() {
                         self.advance();
-                        tokens.push(Token::Power(self.get_position()));
+                        tokens.push(Simbolo::Potencia(self.get_position()));
                     } else {
-                        tokens.push(Token::Multiply(self.get_position()));
+                        tokens.push(Simbolo::Multiplicacao(self.get_position()));
                     }
                 }
-                '%' => { self.advance(); tokens.push(Token::Modulo(self.get_position())); }
+                '%' => { self.advance(); tokens.push(Simbolo::Modulo(self.get_position())); }
                 '=' => {
                     self.advance();
                     if let Some('=') = self.chars.peek() {
                         self.advance();
-                        tokens.push(Token::Equal(self.get_position()));
+                        tokens.push(Simbolo::Igual(self.get_position()));
                     } else {
-                        tokens.push(Token::Assign(self.get_position()));
+                        tokens.push(Simbolo::Atribuir(self.get_position()));
                     }
                 }
                 '!' => {
                     self.advance();
                     if let Some('=') = self.chars.peek() {
                         self.advance();
-                        tokens.push(Token::NotEqual(self.get_position()));
+                        tokens.push(Simbolo::NaoIgual(self.get_position()));
                     } else {
-                        tokens.push(Token::Error('!', self.get_position()));
+                        tokens.push(Simbolo::Error('!', self.get_position()));
                     }
                 }
                 '<' => {
                     self.advance();
                     if let Some('=') = self.chars.peek() {
                         self.advance();
-                        tokens.push(Token::LessEqual(self.get_position()));
+                        tokens.push(Simbolo::MenorIgual(self.get_position()));
                     } else {
-                        tokens.push(Token::Less(self.get_position()));
+                        tokens.push(Simbolo::Menor(self.get_position()));
                     }
                 }
                 '>' => {
                     self.advance();
                     if let Some('=') = self.chars.peek() {
                         self.advance();
-                        tokens.push(Token::GreaterEqual(self.get_position()));
+                        tokens.push(Simbolo::MaiorIgual(self.get_position()));
                     } else {
-                        tokens.push(Token::Greater(self.get_position()));
+                        tokens.push(Simbolo::Maior(self.get_position()));
                     }
                 }
-                ';' => { self.advance(); tokens.push(Token::Semicolon(self.get_position())); }
-                '(' => { self.advance(); tokens.push(Token::LeftParen(self.get_position())); }
-                ')' => { self.advance(); tokens.push(Token::RightParen(self.get_position())); }
-                '{' => { self.advance(); tokens.push(Token::LeftBrace(self.get_position())); }
-                '}' => { self.advance(); tokens.push(Token::RightBrace(self.get_position())); }
-                '[' => { self.advance(); tokens.push(Token::LeftBracket(self.get_position())); }
-                ']' => { self.advance(); tokens.push(Token::RightBracket(self.get_position())); }
-                ',' => { self.advance(); tokens.push(Token::Comma(self.get_position())); }
-                ':' => { self.advance(); tokens.push(Token::Colon(self.get_position())); }
+                ';' => { self.advance(); tokens.push(Simbolo::PontoEVirgula(self.get_position())); }
+                '(' => { self.advance(); tokens.push(Simbolo::ParenteseEsquerdo(self.get_position())); }
+                ')' => { self.advance(); tokens.push(Simbolo::ParenteseDireito(self.get_position())); }
+                '{' => { self.advance(); tokens.push(Simbolo::ChaveEsquerda(self.get_position())); }
+                '}' => { self.advance(); tokens.push(Simbolo::ChaveDireita(self.get_position())); }
+                '[' => { self.advance(); tokens.push(Simbolo::ColcheteEsquerdo(self.get_position())); }
+                ']' => { self.advance(); tokens.push(Simbolo::ColcheteDireito(self.get_position())); }
+                ',' => { self.advance(); tokens.push(Simbolo::Virgula(self.get_position())); }
+                ':' => { self.advance(); tokens.push(Simbolo::DoisPontos(self.get_position())); }
                 '.' => {
                     if let Some(next_ch) = self.chars.clone().nth(1) {
                         if next_ch.is_ascii_digit() {
                             let ch = self.chars.next().unwrap();
-                            self.position.column += 1;
-                            self.position.offset += ch.len_utf8();
-                            tokens.push(Token::Error(ch, self.get_position()));
+                            self.position.coluna += 1;
+                            self.position.deslocamento += ch.len_utf8();
+                            tokens.push(Simbolo::Error(ch, self.get_position()));
                         } else {
                             self.advance();
-                            tokens.push(Token::Dot(self.get_position()));
+                            tokens.push(Simbolo::Ponto(self.get_position()));
                         }
                     } else {
                         self.advance();
-                        tokens.push(Token::Dot(self.get_position()));
+                        tokens.push(Simbolo::Ponto(self.get_position()));
                     }
                 }
 
@@ -183,31 +183,31 @@ impl<'a> Lexer<'a> {
 
                 _ => {
                     let ch = self.chars.next().unwrap();
-                    self.position.column += 1;
-                    self.position.offset += ch.len_utf8();
-                    tokens.push(Token::Error(ch, self.get_position()));
+                    self.position.coluna += 1;
+                    self.position.deslocamento += ch.len_utf8();
+                    tokens.push(Simbolo::Error(ch, self.get_position()));
                 }
             }
         }
 
-        tokens.push(Token::EOF(self.get_position()));
+        tokens.push(Simbolo::EOF(self.get_position()));
         tokens
     }
 
     fn advance(&mut self) {
         if let Some(ch) = self.chars.next() {
-            self.position.column += 1;
-            self.position.offset += ch.len_utf8();
+            self.position.coluna += 1;
+            self.position.deslocamento += ch.len_utf8();
         }
     }
 
-    fn get_position(&mut self) -> Position {
-        self.token_pool.get_position(self.position.line, self.position.column, self.position.offset)
+    fn get_position(&mut self) -> Posicao {
+        self.token_pool.get_position(self.position.linha, self.position.coluna, self.position.deslocamento)
     }
 
-    fn lex_number(&mut self) -> Token<'a> {
+    fn lex_number(&mut self) -> Simbolo<'a> {
         let start_pos = self.get_position();
-        let start_offset = self.position.offset;
+        let start_offset = self.position.deslocamento;
 
         while let Some(&ch) = self.chars.peek() {
             if ch.is_ascii_digit() {
@@ -217,35 +217,35 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        let num_str = &self.input[start_offset..self.position.offset];
+        let num_str = &self.input[start_offset..self.position.deslocamento];
         let value = num_str.parse().unwrap_or(0);
-        Token::Number(value, start_pos)
+        Simbolo::Number(value, start_pos)
     }
 
-    fn lex_string(&mut self) -> Option<Token<'a>> {
+    fn lex_string(&mut self) -> Option<Simbolo<'a>> {
         let start_pos = self.get_position();
         self.advance(); // Skip opening quote
-        let start_offset = self.position.offset;
+        let start_offset = self.position.deslocamento;
 
         while let Some(&ch) = self.chars.peek() {
             if ch == '"' {
-                let end_offset = self.position.offset;
+                let end_offset = self.position.deslocamento;
                 self.advance(); // Skip closing quote
                 let string_slice = &self.input[start_offset..end_offset];
-                return Some(Token::String(string_slice, start_pos));
+                return Some(Simbolo::Texto(string_slice, start_pos));
             }
             if ch == '\n' {
-                return Some(Token::Error('"', start_pos));
+                return Some(Simbolo::Error('"', start_pos));
             }
             self.advance();
         }
 
-        Some(Token::Error('"', start_pos))
+        Some(Simbolo::Error('"', start_pos))
     }
 
-    fn lex_identifier_or_keyword(&mut self) -> Token<'a> {
+    fn lex_identifier_or_keyword(&mut self) -> Simbolo<'a> {
         let start_pos = self.get_position();
-        let start_offset = self.position.offset;
+        let start_offset = self.position.deslocamento;
 
         while let Some(&ch) = self.chars.peek() {
             if ch.is_ascii_alphabetic() || ch.is_ascii_digit() || ch == '_' {
@@ -255,44 +255,44 @@ impl<'a> Lexer<'a> {
             }
         }
 
-        let ident_slice = &self.input[start_offset..self.position.offset];
+        let ident_slice = &self.input[start_offset..self.position.deslocamento];
 
         match ident_slice {
-            "var" => Token::Var(start_pos),
-            "escreva" => Token::Escreva(start_pos),
-            "texto" => Token::Texto(start_pos),
-            "leia" => Token::Leia(start_pos),
-            "comprimento" => Token::Comprimento(start_pos),
-            "maiuscula" => Token::Maiuscula(start_pos),
-            "minuscula" => Token::Minuscula(start_pos),
-            "absoluto" => Token::Absoluto(start_pos),
-            "potencia" => Token::Potencia(start_pos),
-            "raiz_quadrada" => Token::RaizQuadrada(start_pos),
-            "importar" => Token::Import(start_pos),
-            "se" => Token::Se(start_pos),
+            "var" => Simbolo::Variavel(start_pos),
+            "escreva" => Simbolo::Escreva(start_pos),
+            "texto" => Simbolo::TextoFuncao(start_pos),
+            "leia" => Simbolo::Leia(start_pos),
+            "comprimento" => Simbolo::Comprimento(start_pos),
+            "maiuscula" => Simbolo::Maiuscula(start_pos),
+            "minuscula" => Simbolo::Minuscula(start_pos),
+            "absoluto" => Simbolo::Absoluto(start_pos),
+            "potencia" => Simbolo::PotenciaFuncao(start_pos),
+            "raiz_quadrada" => Simbolo::RaizQuadrada(start_pos),
+            "importar" => Simbolo::Importacao(start_pos),
+            "se" => Simbolo::Se(start_pos),
             "senao" => self.handle_senao_se(start_pos),
-            "escolha" => Token::Escolha(start_pos),
-            "caso" => Token::Caso(start_pos),
-            "padrao" => Token::Padrao(start_pos),
-            "enquanto" => Token::Enquanto(start_pos),
-            "fazer" => Token::Fazer(start_pos),
+            "escolha" => Simbolo::Escolha(start_pos),
+            "caso" => Simbolo::Caso(start_pos),
+            "padrao" => Simbolo::Padrao(start_pos),
+            "enquanto" => Simbolo::Enquanto(start_pos),
+            "fazer" => Simbolo::Fazer(start_pos),
             "para" => self.handle_para_cada(start_pos),
-            "sustar" => Token::Sustar(start_pos),
-            "continua" => Token::Continua(start_pos),
-            "verdadeiro" => Token::Verdadeiro(start_pos),
-            "falso" => Token::Falso(start_pos),
-            "funcao" => Token::Funcao(start_pos),
-            "função" => Token::Funcao(start_pos), 
-            "retorna" => Token::Retorna(start_pos),
-            "e" => Token::E(start_pos),
-            "ou" => Token::Ou(start_pos),
-            "não" => Token::Nao(start_pos),
-            "nao" => Token::Nao(start_pos),
-            _ => Token::Ident(ident_slice, start_pos),
+            "sustar" => Simbolo::Sustar(start_pos),
+            "continua" => Simbolo::Continua(start_pos),
+            "verdadeiro" => Simbolo::Verdadeiro(start_pos),
+            "falso" => Simbolo::Falso(start_pos),
+            "funcao" => Simbolo::Funcao(start_pos),
+            "função" => Simbolo::Funcao(start_pos), 
+            "retorna" => Simbolo::Retorna(start_pos),
+            "e" => Simbolo::E(start_pos),
+            "ou" => Simbolo::Ou(start_pos),
+            "não" => Simbolo::Nao(start_pos),
+            "nao" => Simbolo::Nao(start_pos),
+            _ => Simbolo::Identificador(ident_slice, start_pos),
         }
     }
 
-    fn handle_senao_se(&mut self, start_pos: Position) -> Token<'a> {
+    fn handle_senao_se(&mut self, start_pos: Posicao) -> Simbolo<'a> {
         while let Some(&ch) = self.chars.peek() {
             if ch.is_whitespace() {
                 self.advance();
@@ -316,13 +316,13 @@ impl<'a> Lexer<'a> {
             for _ in 0.."se".len() {
                 self.advance();
             }
-            Token::SenaoSe(start_pos)
+            Simbolo::SenaoSe(start_pos)
         } else {
-            Token::Senao(start_pos)
+            Simbolo::Senao(start_pos)
         }
     }
 
-    fn handle_para_cada(&mut self, start_pos: Position) -> Token<'a> {
+    fn handle_para_cada(&mut self, start_pos: Posicao) -> Simbolo<'a> {
         while let Some(&ch) = self.chars.peek() {
             if ch.is_whitespace() {
                 self.advance();
@@ -346,9 +346,9 @@ impl<'a> Lexer<'a> {
             for _ in 0.."cada".len() {
                 self.advance();
             }
-            Token::ParaCada(start_pos)
+            Simbolo::ParaCada(start_pos)
         } else {
-            Token::Para(start_pos)
+            Simbolo::Para(start_pos)
         }
     }
 
@@ -371,12 +371,12 @@ mod tests {
         let mut lexer = Lexer::new();
         let tokens = lexer.tokenize("var x = 42;");
         assert_eq!(tokens.len(), 6);
-        assert!(matches!(tokens[0], Token::Var(_)));
-        assert!(matches!(tokens[1], Token::Ident("x", _)));
-        assert!(matches!(tokens[2], Token::Assign(_)));
-        assert!(matches!(tokens[3], Token::Number(42, _)));
-        assert!(matches!(tokens[4], Token::Semicolon(_)));
-        assert!(matches!(tokens[5], Token::EOF(_)));
+        assert!(matches!(tokens[0], Simbolo::Variavel(_)));
+        assert!(matches!(tokens[1], Simbolo::Identificador("x", _)));
+        assert!(matches!(tokens[2], Simbolo::Atribuir(_)));
+        assert!(matches!(tokens[3], Simbolo::Number(42, _)));
+        assert!(matches!(tokens[4], Simbolo::PontoEVirgula(_)));
+        assert!(matches!(tokens[5], Simbolo::EOF(_)));
     }
 
     #[test]
@@ -384,8 +384,8 @@ mod tests {
         let mut lexer = Lexer::new();
         let tokens = lexer.tokenize("\"Hello World\"");
         let expected = vec![
-            Token::String("Hello World", Position { line: 1, column: 1, offset: 0 }),
-            Token::EOF(Position { line: 1, column: 14, offset: 13 })
+            Simbolo::Texto("Hello World", Posicao { linha: 1, coluna: 1, deslocamento: 0 }),
+            Simbolo::EOF(Posicao { linha: 1, coluna: 14, deslocamento: 13 })
         ];
         assert_eq!(tokens, expected);
     }
@@ -395,12 +395,12 @@ mod tests {
         let mut lexer = Lexer::new();
         let tokens = lexer.tokenize("a + b * c");
         assert_eq!(tokens.len(), 6);
-        assert!(matches!(tokens[0], Token::Ident("a", _)));
-        assert!(matches!(tokens[1], Token::Plus(_)));
-        assert!(matches!(tokens[2], Token::Ident("b", _)));
-        assert!(matches!(tokens[3], Token::Multiply(_)));
-        assert!(matches!(tokens[4], Token::Ident("c", _)));
-        assert!(matches!(tokens[5], Token::EOF(_)));
+        assert!(matches!(tokens[0], Simbolo::Identificador("a", _)));
+        assert!(matches!(tokens[1], Simbolo::Adicao(_)));
+        assert!(matches!(tokens[2], Simbolo::Identificador("b", _)));
+        assert!(matches!(tokens[3], Simbolo::Multiplicacao(_)));
+        assert!(matches!(tokens[4], Simbolo::Identificador("c", _)));
+        assert!(matches!(tokens[5], Simbolo::EOF(_)));
     }
 
     #[test]
@@ -408,11 +408,11 @@ mod tests {
         let mut lexer = Lexer::new();
         let tokens = lexer.tokenize("escreva(\"test\")");
         assert_eq!(tokens.len(), 5);
-        assert!(matches!(tokens[0], Token::Escreva(_)));
-        assert!(matches!(tokens[1], Token::LeftParen(_)));
-        assert!(matches!(tokens[2], Token::String("test", _)));
-        assert!(matches!(tokens[3], Token::RightParen(_)));
-        assert!(matches!(tokens[4], Token::EOF(_)));
+        assert!(matches!(tokens[0], Simbolo::Escreva(_)));
+        assert!(matches!(tokens[1], Simbolo::ParenteseEsquerdo(_)));
+        assert!(matches!(tokens[2], Simbolo::Texto("test", _)));
+        assert!(matches!(tokens[3], Simbolo::ParenteseDireito(_)));
+        assert!(matches!(tokens[4], Simbolo::EOF(_)));
     }
 
     #[test]
@@ -420,16 +420,16 @@ mod tests {
         let mut lexer = Lexer::new();
         let tokens = lexer.tokenize("var x = 1; // comment\nvar y = 2;");
         assert_eq!(tokens.len(), 11);
-        assert!(matches!(tokens[0], Token::Var(_)));
-        assert!(matches!(tokens[1], Token::Ident("x", _)));
-        assert!(matches!(tokens[2], Token::Assign(_)));
-        assert!(matches!(tokens[3], Token::Number(1, _)));
-        assert!(matches!(tokens[4], Token::Semicolon(_)));
-        assert!(matches!(tokens[5], Token::Var(_)));
-        assert!(matches!(tokens[6], Token::Ident("y", _)));
-        assert!(matches!(tokens[7], Token::Assign(_)));
-        assert!(matches!(tokens[8], Token::Number(2, _)));
-        assert!(matches!(tokens[9], Token::Semicolon(_)));
-        assert!(matches!(tokens[10], Token::EOF(_)));
+        assert!(matches!(tokens[0], Simbolo::Variavel(_)));
+        assert!(matches!(tokens[1], Simbolo::Identificador("x", _)));
+        assert!(matches!(tokens[2], Simbolo::Atribuir(_)));
+        assert!(matches!(tokens[3], Simbolo::Number(1, _)));
+        assert!(matches!(tokens[4], Simbolo::PontoEVirgula(_)));
+        assert!(matches!(tokens[5], Simbolo::Variavel(_)));
+        assert!(matches!(tokens[6], Simbolo::Identificador("y", _)));
+        assert!(matches!(tokens[7], Simbolo::Atribuir(_)));
+        assert!(matches!(tokens[8], Simbolo::Number(2, _)));
+        assert!(matches!(tokens[9], Simbolo::PontoEVirgula(_)));
+        assert!(matches!(tokens[10], Simbolo::EOF(_)));
     }
 }
