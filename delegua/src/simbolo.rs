@@ -58,16 +58,4 @@ pub enum Simbolo<'a> {
     Ponto(Posicao),
     EOF(Posicao),
     Error(char, Posicao),
-
-
-    // Isso provavelmente será removido em breve
-    Escreva(Posicao),
-    TextoFuncao(Posicao),
-    Leia(Posicao),
-    Comprimento(Posicao),
-    Maiuscula(Posicao),
-    Minuscula(Posicao),
-    Absoluto(Posicao),
-    PotenciaFuncao(Posicao),
-    RaizQuadrada(Posicao),
 }
