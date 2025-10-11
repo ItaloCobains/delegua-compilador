@@ -86,12 +86,10 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             i8_ponteiro_tipo,
         };
 
-        // TODO: Carregar essa modulos nativos de forma dinâmica
-        // ou pelo menos de forma mais elegante
-        // e escrever eles direto na linguagem de alto nível
-        let math_module = Matematica::new(contexto);
-        math_module.declarar_funcoes(&codegen.modulo);
-        math_module.gerar_implementacoes(&codegen.modulo);
+        // TODO: Devo carregar isso apenas quando importar algum modulo de matematica
+        // let math_module = Matematica::new(contexto);
+        // math_module.declarar_funcoes(&codegen.modulo);
+        // math_module.gerar_implementacoes(&codegen.modulo);
 
         Ok(codegen)
     }
@@ -1033,6 +1031,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
     }
 
     fn generate_raiz_quadrada_call(&mut self, args: &[Espressao]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        dbg!(args);
         if args.len() != 1 {
             return Err(CompilerError::CodeGen(
                 "raiz_quadrada() expects exactly 1 argument".to_string()

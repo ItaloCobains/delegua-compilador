@@ -115,7 +115,7 @@ impl<'a> AvaliadorSintatico<'a> {
         } else if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
             let args = self.resolve_argumentos()?;
             self.consumir(Self::simbolo_com_posicao(Simbolo::ParenteseDireito), "Esperado ')' após os argumentos da função")?;
-            self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a chamada da função")?;
+            let _ = self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a chamada da função");
             Ok(Declaracao::ChamadaDeFuncao(Espressao::ChamadaFuncao {
                 chamado: Box::new(Espressao::Identificador(nome)),
                 argumentos: args,
