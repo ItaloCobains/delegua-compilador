@@ -86,12 +86,10 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             i8_ponteiro_tipo,
         };
 
-        // TODO: Carregar essa modulos nativos de forma dinâmica
-        // ou pelo menos de forma mais elegante
-        // e escrever eles direto na linguagem de alto nível
-        let math_module = Matematica::new(contexto);
-        math_module.declarar_funcoes(&codegen.modulo);
-        math_module.gerar_implementacoes(&codegen.modulo);
+        // TODO: Devo carregar isso apenas quando importar algum modulo de matematica
+        // let math_module = Matematica::new(contexto);
+        // math_module.declarar_funcoes(&codegen.modulo);
+        // math_module.gerar_implementacoes(&codegen.modulo);
 
         Ok(codegen)
     }
@@ -1033,6 +1031,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
     }
 
     fn generate_raiz_quadrada_call(&mut self, args: &[Espressao]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+        dbg!(args);
         if args.len() != 1 {
             return Err(CompilerError::CodeGen(
                 "raiz_quadrada() expects exactly 1 argument".to_string()
@@ -2017,7 +2016,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
 mod tests {
     use super::*;
     use crate::lexador::Lexador;
-    use crate::analise_sintatica::AnaliseSintatica;
+    use crate::analise_sintatica::AvaliadorSintatico;
 
     #[test]
     fn test_simple_variable() {
@@ -2026,7 +2025,7 @@ mod tests {
 
         let mut lexer = Lexador::new();
         let tokens = lexer.analisar("var a = 42;");
-        let mut parser = AnaliseSintatica::new(tokens);
+        let mut parser = AvaliadorSintatico::new(tokens);
         let program = parser.analisar().unwrap();
 
         assert!(codegen.gerar(&program).is_ok());
@@ -2043,7 +2042,7 @@ mod tests {
 
         let mut lexer = Lexador::new();
         let tokens = lexer.analisar("var a = 10; var b = 5; var c = 2; var result = a + b * c;");
-        let mut parser = AnaliseSintatica::new(tokens);
+        let mut parser = AvaliadorSintatico::new(tokens);
         let program = parser.analisar().unwrap();
 
         assert!(codegen.gerar(&program).is_ok());
@@ -2060,7 +2059,7 @@ mod tests {
 
         let mut lexer = Lexador::new();
         let tokens = lexer.analisar("var msg = \"Hello World\";");
-        let mut parser = AnaliseSintatica::new(tokens);
+        let mut parser = AvaliadorSintatico::new(tokens);
         let program = parser.analisar().unwrap();
 
         assert!(codegen.gerar(&program).is_ok());
@@ -2082,7 +2081,7 @@ mod tests {
             escreva("Resultado: " + texto(soma));
         "#;
         let tokens = lexer.analisar(code);
-        let mut parser = AnaliseSintatica::new(tokens);
+        let mut parser = AvaliadorSintatico::new(tokens);
         let program = parser.analisar().unwrap();
 
         assert!(codegen.gerar(&program).is_ok());
@@ -2101,7 +2100,7 @@ mod tests {
 
         let mut lexer = Lexador::new();
         let tokens = lexer.analisar("var arr = [1, 2, 3];");
-        let mut parser = AnaliseSintatica::new(tokens);
+        let mut parser = AvaliadorSintatico::new(tokens);
         let program = parser.analisar().unwrap();
 
         let result = codegen.gerar(&program);
@@ -2122,7 +2121,7 @@ mod tests {
 
         let mut lexer = Lexador::new();
         let tokens = lexer.analisar("var arr = [10, 20, 30]; var x = arr[1];");
-        let mut parser = AnaliseSintatica::new(tokens);
+        let mut parser = AvaliadorSintatico::new(tokens);
         let program = parser.analisar().unwrap();
 
         assert!(codegen.gerar(&program).is_ok());
@@ -2139,7 +2138,7 @@ mod tests {
 
         let mut lexer = Lexador::new();
         let tokens = lexer.analisar("var arr = [];");
-        let mut parser = AnaliseSintatica::new(tokens);
+        let mut parser = AvaliadorSintatico::new(tokens);
         let program = parser.analisar().unwrap();
 
         assert!(codegen.gerar(&program).is_ok());
@@ -2155,7 +2154,7 @@ mod tests {
 
         let mut lexer = Lexador::new();
         let tokens = lexer.analisar("var a = 5; var b = 10; var arr = [a + b, a * b];");
-        let mut parser = AnaliseSintatica::new(tokens);
+        let mut parser = AvaliadorSintatico::new(tokens);
         let program = parser.analisar().unwrap();
 
         assert!(codegen.gerar(&program).is_ok());

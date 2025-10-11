@@ -3,7 +3,7 @@ use std::process::Command;
 use inkwell::context::Context;
 
 use delegua::lexador::Lexador;
-use delegua::analise_sintatica::AnaliseSintatica;
+use delegua::analise_sintatica::AvaliadorSintatico;
 use delegua::gerador_de_codigo::GeradorDeCodigo;
 use delegua::error::CompilerError;
 
@@ -15,7 +15,7 @@ pub fn compile_file(filename: &str) -> Result<(), CompilerError> {
 
     let mut lexer = Lexador::new();
     let tokens = lexer.analisar(&source_code);
-    let mut parser = AnaliseSintatica::new(tokens);
+    let mut parser = AvaliadorSintatico::new(tokens);
     let ast = parser.analisar()?;
 
     let context = Context::create();
@@ -75,7 +75,7 @@ mod tests {
 
         let mut lexer = Lexador::new();
         let tokens = lexer.analisar(test_code);
-        let mut parser = AnaliseSintatica::new(tokens);
+        let mut parser = AvaliadorSintatico::new(tokens);
         let ast = parser.analisar().unwrap();
 
         assert_eq!(ast.declaracoes.len(), 4);
