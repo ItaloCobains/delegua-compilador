@@ -1031,7 +1031,6 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
     }
 
     fn generate_raiz_quadrada_call(&mut self, args: &[Espressao]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
-        dbg!(args);
         if args.len() != 1 {
             return Err(CompilerError::CodeGen(
                 "raiz_quadrada() expects exactly 1 argument".to_string()
