@@ -617,7 +617,7 @@ impl<'a> AvaliadorSintatico<'a> {
         } else {
             let pos = self.posicao_atual();
             Err(CompilerError::AvaliadorSintatico(
-                format!("{} at line {}, column {}. Found: {:?}", 
+                format!("{} na linha {}, coluna {}. Encontrado: {:?}", 
                        message, pos.linha, pos.coluna, self.simbolo_atual())
             ))
         }
