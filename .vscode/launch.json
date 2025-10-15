@@ -6,7 +6,7 @@
             "request": "launch",
             "name": "Launch",
             "program": "${workspaceRoot}/target/debug/delegua-compilador",
-            "args": ["construa", "${workspaceRoot}/exemplos/delegua/escreva.delegua"],
+            "args": ["construa", "${workspaceRoot}/exemplos/delegua/matematica.delegua"],
             "cwd": "${workspaceRoot}",
             "console": "integratedTerminal",
             "env": [
