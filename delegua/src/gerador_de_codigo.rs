@@ -1,7 +1,7 @@
 use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::builder::Builder;
-use inkwell::values::{IntValue, PointerValue, FunctionValue, BasicValueEnum};
+use inkwell::values::{BasicValue, BasicValueEnum, FunctionValue, GlobalValue, IntValue, PointerValue};
 use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, IntType, PointerType};
 use inkwell::AddressSpace;
 use std::collections::HashMap;
@@ -48,9 +48,9 @@ pub struct GeradorDeCodigo<'ctx> {
     /// Tipo inteiro de 32 bits
     i32_tipo: IntType<'ctx>,
     /// Tipo Ponteiro
-    i8_ponteiro_tipo: PointerType<'ctx>,
+    i8_tipo: PointerType<'ctx>,
     /// Tabela de textos literais
-    textos_literais: HashMap<String, PointerValue<'ctx>>,
+    textos_literais: HashMap<String, GlobalValue<'ctx>>,
     /// Pilha de contextos de loop para controle de break/continue
     loop_pilha: Vec<LoopContexto<'ctx>>,
 }
@@ -86,7 +86,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             loop_pilha: Vec::with_capacity(8),
             i64_tipo,
             i32_tipo,
-            i8_ponteiro_tipo,
+            i8_tipo: i8_ponteiro_tipo,
         };
 
         Ok(codegen)
@@ -108,33 +108,33 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
 
         let fn_val = match nome {
             "printf" => {
-                let params = &[self.i8_ponteiro_tipo.into()];
+                let params = &[self.i8_tipo.into()];
                 adicionar_funcao("printf", &self.i32_tipo, params, true)
             }
             "malloc" => {
                 let params = &[self.i64_tipo.into()];
-                adicionar_funcao("malloc", &self.i8_ponteiro_tipo, params, false)
+                adicionar_funcao("malloc", &self.i8_tipo, params, false)
             }
             "strlen" => {
-                let params = &[self.i8_ponteiro_tipo.into()];
+                let params = &[self.i8_tipo.into()];
                 adicionar_funcao("strlen", &self.i64_tipo, params, false)
             }
             "strcpy" | "strcat" => {
                 let params = &[
-                    self.i8_ponteiro_tipo.into(),
-                    self.i8_ponteiro_tipo.into(),
+                    self.i8_tipo.into(),
+                    self.i8_tipo.into(),
                 ];
-                adicionar_funcao(nome, &self.i8_ponteiro_tipo, params, false)
+                adicionar_funcao(nome, &self.i8_tipo, params, false)
             }
             "sprintf" => {
                 let params = &[
-                    self.i8_ponteiro_tipo.into(),
-                    self.i8_ponteiro_tipo.into(),
+                    self.i8_tipo.into(),
+                    self.i8_tipo.into(),
                 ];
                 adicionar_funcao("sprintf", &self.i64_tipo, params, true)
             }
             "scanf" => {
-                let params = &[self.i8_ponteiro_tipo.into()];
+                let params = &[self.i8_tipo.into()];
                 adicionar_funcao("scanf", &self.i64_tipo, params, true)
             }
             _ => {
@@ -150,7 +150,9 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
     }
 
     pub fn gerar(&mut self, programa: &Programa) -> Result<(), CompilerError> {
-        let main_type = self.i64_tipo.fn_type(&[], false);
+        // main() retorna i32 por convenção (exit code)
+        let i32_tipo = self.contexto.i32_type();
+        let main_type = i32_tipo.fn_type(&[], false);
         let main_fn = self.modulo.add_function("main", main_type, None);
         let basic_block = self.contexto.append_basic_block(main_fn, "entry");
         self.construtor.position_at_end(basic_block);
@@ -159,7 +161,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             self.gera_declacao(statement)?;
         }
 
-        let zero = self.i64_tipo.const_int(0, false);
+        let zero = i32_tipo.const_int(0, false);
         self.construtor.build_return(Some(&zero))
             .map_err(|e| CompilerError::CodeGen(format!("Error compiling return: {:?}", e)))?;
 
@@ -174,7 +176,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             Declaracao::Atribuicao { nome: name, valor: value } => {
                 self.gera_atribuicao(name, value)
             }
-            Declaracao::Importacao { modulo: module, itens: items } => {
+            Declaracao::Importacao { modulo, itens } => {
                 todo!("Implementar importação de módulos")
             }
             Declaracao::Se { condicao: condition, ramificacao_entao: then_branch, ramificacao_outro: else_branch } => {
@@ -248,14 +250,14 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
                     }
                     _ => {
                         let alloca = self.safe_build(
-                            self.construtor.build_alloca(self.i8_ponteiro_tipo, name),
+                            self.construtor.build_alloca(self.i8_tipo, name),
                             &format!("alloca para texto '{}'", name)
                         )?;
                         self.safe_build(
                             self.construtor.build_store(alloca, ptr_val),
                             &format!("armazenar texto em '{}'", name)
                         )?;
-                        (alloca, VariavelTipo::Texto(self.i8_ponteiro_tipo))
+                        (alloca, VariavelTipo::Texto(self.i8_tipo))
                     }
                 }
             }
@@ -303,8 +305,10 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
                 global.set_initializer(&texto_valor);
                 global.set_constant(true);
                 global.set_unnamed_addr(true);
-                let ponteiro = global.as_pointer_value();
-                Ok(ponteiro.into())
+
+                // Com ponteiros opacos (LLVM 15+), não precisamos de GEP explícito
+                // O LLVM entende automaticamente a conversão de ptr para ptr
+                Ok(global.as_pointer_value().into())
             }
 
             Espressao::Logico(b) => {
@@ -463,11 +467,11 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             }
 
             Espressao::Objeto { propriedades: properties } => {
-                self.generate_object_literal(properties)
+                todo!("Implementar criação de objetos")
             }
 
             Espressao::PropriedadeAcesso { objeto: object, propriedade: property } => {
-                self.generate_property_access(object, property)
+                todo!("Implementar acesso a propriedades de objetos")
             }
         }
     }
@@ -525,10 +529,36 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
         }
     }
 
-    fn gera_escreva_chamada(&mut self, argumentos: &[Espressao]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
+    fn call_printf(
+        &mut self,
+        printf_fn: FunctionValue<'ctx>,
+        formato: &str,
+        arg: BasicValueEnum<'ctx>,
+    ) -> Result<(), CompilerError> {
+        let formato_global = self.get_or_create_format_string(formato);
+        
+        // https://llvm.org/docs/OpaquePointers.html
+        // Com ponteiros opacos (LLVM 15+), podemos passar diretamente o ponteiro
+        // Não precisamos de GEP explícito para conversão de tipo
+        self.safe_build(
+            self.construtor.build_call(
+                printf_fn,
+                &[formato_global.as_pointer_value().into(), arg.into()],
+                "printf_call",
+            ),
+            "printf call",
+        )?;
+
+        Ok(())
+    }
+
+    fn gera_escreva_chamada(
+        &mut self,
+        argumentos: &[Espressao],
+    ) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         if argumentos.len() != 1 {
             return Err(CompilerError::CodeGen(
-                "escreva() espera exatamente um argumento".to_string()
+                "escreva() espera exatamente um argumento".to_string(),
             ));
         }
 
@@ -536,31 +566,17 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
         let printf_fn = self.pega_funcoes_nativas("printf")?;
 
         match arg {
-            BasicValueEnum::PointerValue(str_ptr) => {
-                let format_ptr = self.get_or_create_format_string("%s\n\0");
-                self.safe_build(
-                    self.construtor.build_call(
-                        printf_fn,
-                        &[format_ptr.into(), str_ptr.into()],
-                        "printf_str_call"
-                    ),
-                    "printf string call"
-                )?;
+            BasicValueEnum::PointerValue(_) => {
+                self.call_printf(printf_fn, "%s\n\0", arg)?;
             }
-            BasicValueEnum::IntValue(int_val) => {
-                let format_ptr = self.get_or_create_format_string("%lld\n\0");
-                self.safe_build(
-                    self.construtor.build_call(
-                        printf_fn,
-                        &[format_ptr.into(), int_val.into()],
-                        "printf_int_call"
-                    ),
-                    "printf integer call"
-                )?;
+            BasicValueEnum::IntValue(_) => {
+                self.call_printf(printf_fn, "%lld\n\0", arg)?;
             }
-            _ => return Err(CompilerError::CodeGen(
-                "escreva() suporta apenas argumentos de string e inteiro".to_string()
-            )),
+            _ => {
+                return Err(CompilerError::CodeGen(
+                    "escreva() suporta apenas argumentos de string e inteiro".to_string(),
+                ))
+            }
         }
 
         Ok(self.i64_tipo.const_int(0, false).into())
@@ -602,7 +618,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             self.safe_build(
                 self.construtor.build_call(
                     scanf_fn,
-                    &[format_ptr.into(), buffer.into()],
+                    &[format_ptr.as_pointer_value().into(), buffer.into()],
                     "scanf_call"
                 ),
                 "scanf call"
@@ -617,7 +633,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
                 self.safe_build(
                     self.construtor.build_call(
                         printf_fn,
-                        &[format_ptr.into(), prompt_ptr.into()],
+                        &[format_ptr.as_pointer_value().into(), prompt_ptr.into()],
                         "printf_prompt"
                     ),
                     "printf prompt call"
@@ -637,7 +653,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             self.safe_build(
                 self.construtor.build_call(
                     scanf_fn,
-                    &[format_ptr.into(), buffer.into()],
+                    &[format_ptr.as_pointer_value().into(), buffer.into()],
                     "scanf_call"
                 ),
                 "scanf call"
@@ -1042,7 +1058,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
         self.safe_build(
             self.construtor.build_call(
                 sprintf_fn,
-                &[buffer.into(), format_ptr.into(), int_val.into()],
+                &[buffer.into(), format_ptr.as_pointer_value().into(), int_val.into()],
                 "sprintf_int"
             ),
             "sprintf integer conversion"
@@ -1122,7 +1138,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
     }
     
     
-    fn get_or_create_format_string(&mut self, format: &str) -> PointerValue<'ctx> {
+    fn get_or_create_format_string(&mut self, format: &str) -> GlobalValue<'ctx> {
         if let Some(&ptr) = self.textos_literais.get(format) {
             return ptr;
         }
@@ -1132,24 +1148,9 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
         global.set_initializer(&format_str);
         global.set_constant(true);
         global.set_unnamed_addr(true);
-        let ponteiro = global.as_pointer_value();
         
-        self.textos_literais.insert(format.to_string(), ponteiro);
-        ponteiro
-    }
-
-    fn get_or_create_string_literal(&mut self, text: &str) -> PointerValue<'ctx> {
-        if let Some(&ptr) = self.textos_literais.get(text) {
-            return ptr;
-        }
-
-        let string_val = self.contexto.const_string(text.as_bytes(), true);
-        let global = self.modulo.add_global(string_val.get_type(), None, "string_literal");
-        global.set_initializer(&string_val);
-        let ptr = global.as_pointer_value();
-
-        self.textos_literais.insert(text.to_string(), ptr);
-        ptr
+        self.textos_literais.insert(format.to_string(), global);
+        global
     }
 
     #[inline]
@@ -1411,135 +1412,6 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
         )?;
 
         Ok(element_val)
-    }
-
-    fn generate_object_literal(&mut self, properties: &[(String, Espressao)]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
-        let obj_size = properties.len();
-
-        let total_size = self.i64_tipo.const_int(((obj_size * 2 + 1) * 8) as u64, false);
-
-        let malloc_fn = self.pega_funcoes_nativas("malloc")?;
-        let obj_ptr = self.safe_build(
-            self.construtor.build_call(malloc_fn, &[total_size.into()], "object_alloc"),
-            "allocate object memory"
-        )?;
-
-        let obj_ptr = obj_ptr.try_as_basic_value().left()
-            .ok_or_else(|| CompilerError::CodeGen("malloc call failed".to_string()))?
-            .into_pointer_value();
-
-        let obj_ptr = self.safe_build(
-            self.construtor.build_pointer_cast(obj_ptr, self.contexto.ptr_type(AddressSpace::default()), "object_cast"),
-            "cast object pointer"
-        )?;
-
-        let size_value = self.i64_tipo.const_int(obj_size as u64, false);
-        self.safe_build(
-            self.construtor.build_store(obj_ptr, size_value),
-            "store object size"
-        )?;
-
-        for (i, (key, value)) in properties.iter().enumerate() {
-            let key_str = self.get_or_create_string_literal(key);
-
-            let key_index = self.i64_tipo.const_int((i * 2 + 1) as u64, false);
-            let value_index = self.i64_tipo.const_int((i * 2 + 2) as u64, false);
-
-            let key_ptr = unsafe {
-                self.safe_build(
-                    self.construtor.build_gep(self.i64_tipo, obj_ptr, &[key_index], &format!("obj_key_ptr_{}", i)),
-                    &format!("get pointer to object key {}", i)
-                )?
-            };
-
-            let key_as_int = self.safe_build(
-                self.construtor.build_ptr_to_int(key_str, self.i64_tipo, "key_as_int"),
-                "convert key string to int"
-            )?;
-
-            self.safe_build(
-                self.construtor.build_store(key_ptr, key_as_int),
-                &format!("store object key {}", i)
-            )?;
-
-            let value_val = self.gera_espressao(value)?;
-            let value_int = self.value_to_int(value_val, &format!("object_value_{}", i))?;
-
-            let value_ptr = unsafe {
-                self.safe_build(
-                    self.construtor.build_gep(self.i64_tipo, obj_ptr, &[value_index], &format!("obj_value_ptr_{}", i)),
-                    &format!("get pointer to object value {}", i)
-                )?
-            };
-
-            self.safe_build(
-                self.construtor.build_store(value_ptr, value_int),
-                &format!("store object value {}", i)
-            )?;
-        }
-
-        Ok(obj_ptr.into())
-    }
-
-    fn generate_property_access(&mut self, object: &Espressao, _property: &str) -> Result<BasicValueEnum<'ctx>, CompilerError> {
-        let obj_val = self.gera_espressao(object)?;
-        let obj_ptr = obj_val.into_pointer_value();
-
-        let size_ptr = obj_ptr;
-        let size_val = self.safe_build(
-            self.construtor.build_load(self.i64_tipo, size_ptr, "object_size"),
-            "load object size"
-        )?.into_int_value();
-
-        // let prop_str = self.get_or_create_string_literal(property);
-        // let prop_as_int = self.safe_build(
-        //     self.builder.build_ptr_to_int(prop_str, self.i64_type, "prop_as_int"),
-        //     "convert property string to int"
-        // )?;
-
-        let current_function = self.construtor.get_insert_block().unwrap().get_parent().unwrap();
-        let loop_bb = self.contexto.append_basic_block(current_function, "prop_search");
-        let found_bb = self.contexto.append_basic_block(current_function, "prop_found");
-        let not_found_bb = self.contexto.append_basic_block(current_function, "prop_not_found");
-
-        let counter = self.safe_build(
-            self.construtor.build_alloca(self.i64_tipo, "counter"),
-            "allocate counter"
-        )?;
-        let zero = self.i64_tipo.const_int(0, false);
-        self.safe_build(
-            self.construtor.build_store(counter, zero),
-            "initialize counter"
-        )?;
-
-        self.safe_build(
-            self.construtor.build_unconditional_branch(loop_bb),
-            "branch to loop"
-        )?;
-
-        self.construtor.position_at_end(loop_bb);
-        let current_counter = self.safe_build(
-            self.construtor.build_load(self.i64_tipo, counter, "load_counter"),
-            "load counter"
-        )?.into_int_value();
-
-        let is_end = self.safe_build(
-            self.construtor.build_int_compare(inkwell::IntPredicate::EQ, current_counter, size_val, "is_end"),
-            "check if end reached"
-        )?;
-
-        self.safe_build(
-            self.construtor.build_conditional_branch(is_end, not_found_bb, found_bb),
-            "conditional branch"
-        )?;
-
-        self.construtor.position_at_end(not_found_bb);
-        // let not_found_val = self.i64_type.const_int(0, false);
-
-        self.construtor.position_at_end(found_bb);
-        let found_val = self.i64_tipo.const_int(42, false); // Placeholder value
-
-        Ok(found_val.into())
     }
 
     fn generate_if_statement(&mut self, condition: &Espressao, then_branch: &[Declaracao], else_branch: Option<&Vec<Declaracao>>) -> Result<(), CompilerError> {
