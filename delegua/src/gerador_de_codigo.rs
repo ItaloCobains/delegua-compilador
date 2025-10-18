@@ -25,6 +25,15 @@ impl<'ctx> VariavelTipo<'ctx> {
     }
 }
 
+/// Tipo de armazenamento de variável: direta (SSA) ou alocada (mutável)
+#[derive(Clone, Copy)]
+enum ArmazenamentoVariavel<'ctx> {
+    /// Armazenamento direto sem alloca (Single Static Assignment)
+    Direta(BasicValueEnum<'ctx>, VariavelTipo<'ctx>),
+    /// Armazenamento com alloca (para variáveis reatribuídas)
+    Alocada(PointerValue<'ctx>, VariavelTipo<'ctx>),
+}
+
 /// Estrutura principal para geração de código LLVM
 /// Contém o contexto, módulo, construtor e tabelas de símbolos
 /// para variáveis e funções
@@ -36,7 +45,7 @@ pub struct GeradorDeCodigo<'ctx> {
     /// Construtor LLVM
     construtor: Builder<'ctx>,
     /// Tabela de símbolos para variáveis
-    variaveis: HashMap<String, (PointerValue<'ctx>, VariavelTipo<'ctx>)>,
+    variaveis: HashMap<String, ArmazenamentoVariavel<'ctx>>,
     /// Tabela de símbolos para funções
     funcoes: HashMap<String, FunctionValue<'ctx>>,
     /// Tabela de símbolos para funções nativas
@@ -59,6 +68,8 @@ pub struct GeradorDeCodigo<'ctx> {
     buffers_concatenacao_temporarios: Vec<PointerValue<'ctx>>,
     /// Mapa de literais (globalvalue) para seus tamanhos conhecidos
     tamanhos_literais_globais: HashMap<GlobalValue<'ctx>, usize>,
+    /// Mapa de buffers criados para seus tamanhos conhecidos
+    tamanhos_buffers_criados: HashMap<PointerValue<'ctx>, IntValue<'ctx>>,
 }
 
 /// Contexto de loop para controle de break/continue
@@ -93,6 +104,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             buffers_para_liberar: Vec::new(),
             buffers_concatenacao_temporarios: Vec::new(),
             tamanhos_literais_globais: HashMap::new(),
+            tamanhos_buffers_criados: HashMap::new(),
             i64_tipo,
             i32_tipo,
             i8_tipo: i8_ponteiro_tipo,
@@ -204,8 +216,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
         ponteiro: PointerValue<'ctx>,
         nome: &str
     ) -> Result<IntValue<'ctx>, CompilerError> {
-        // Tentar descobrir se o ponteiro vem de um GlobalValue
-        // Verificar se é um GlobalValue consultando nosso mapa
+        // 1. Tentar descobrir se o ponteiro vem de um GlobalValue
         for (global, &tamanho) in &self.tamanhos_literais_globais {
             if global.as_pointer_value() == ponteiro {
                 // Otimização: tamanho conhecido em tempo de compilação!
@@ -213,7 +224,13 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             }
         }
 
-        // Fallback: chamar strlen dinamicamente
+        // 2. Verificar se é um buffer que criamos
+        if let Some(&tamanho_int) = self.tamanhos_buffers_criados.get(&ponteiro) {
+            // Otimização: retorna o IntValue que já tínhamos calculado!
+            return Ok(tamanho_int);
+        }
+
+        // 3. Fallback: chamar strlen dinamicamente
         let strlen_fn = self.pega_funcoes_nativas("strlen")?;
         let len_call = self.safe_build(
             self.construtor.build_call(strlen_fn, &[ponteiro.into()], nome),
@@ -323,72 +340,67 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
     fn gera_declaracao_variavel(&mut self, name: &str, value: &Espressao) -> Result<(), CompilerError> {
         let val = self.gera_espressao(value)?;
 
-        let (alloca, var_type) = match val {
-            BasicValueEnum::IntValue(int_val) => {
-                let alloca = self.safe_build(
-                    self.construtor.build_alloca(self.i64_tipo, name),
-                    &format!("alloca para variável '{}'", name)
-                )?;
-                self.safe_build(
-                    self.construtor.build_store(alloca, int_val),
-                    &format!("armazenar na variável '{}'", name)
-                )?;
-                (alloca, VariavelTipo::Numero(self.i64_tipo))
-            }
+        // Usar armazenamento direto (SSA) por padrão - mais eficiente!
+        let var_type = match val {
+            BasicValueEnum::IntValue(_) => VariavelTipo::Numero(self.i64_tipo),
             BasicValueEnum::PointerValue(ptr_val) => {
                 match value {
                     Espressao::Funcao { .. } => {
-                        let func_ptr_type = ptr_val.get_type();
-                        let alloca = self.safe_build(
-                            self.construtor.build_alloca(func_ptr_type, name),
-                            &format!("alloca para função '{}'", name)
-                        )?;
-                        self.safe_build(
-                            self.construtor.build_store(alloca, ptr_val),
-                            &format!("armazenar função em '{}'", name)
-                        )?;
-                        (alloca, VariavelTipo::Funcao(func_ptr_type))
+                        VariavelTipo::Funcao(ptr_val.get_type())
                     }
-                    _ => {
-                        let alloca = self.safe_build(
-                            self.construtor.build_alloca(self.i8_tipo, name),
-                            &format!("alloca para texto '{}'", name)
-                        )?;
-                        self.safe_build(
-                            self.construtor.build_store(alloca, ptr_val),
-                            &format!("armazenar texto em '{}'", name)
-                        )?;
-                        (alloca, VariavelTipo::Texto(self.i8_tipo))
-                    }
+                    _ => VariavelTipo::Texto(self.i8_tipo)
                 }
             }
             _ => return Err(CompilerError::CodeGen(
                 format!("Tipo de valor não suportado para variável '{}': {:?}", name, val.get_type())
             )),
         };
-        
-        self.variaveis.insert(name.to_string(), (alloca, var_type));
+
+        // Armazenamento direto - sem alloca/store/load!
+        self.variaveis.insert(
+            name.to_string(),
+            ArmazenamentoVariavel::Direta(val, var_type)
+        );
+
         Ok(())
     }
 
     fn gera_atribuicao(&mut self, nome: &str, valor: &Espressao) -> Result<(), CompilerError> {
         let val = self.gera_espressao(valor)?;
 
-        if let Some(&(var_ptr, _)) = self.variaveis.get(nome) {
-            match val {
-                BasicValueEnum::IntValue(int_val) => {
-                    self.construtor.build_store(var_ptr, int_val)
-                        .map_err(|e| CompilerError::CodeGen(format!("Error ao armazenar valor inteiro: {:?}", e)))?;
-                }
-                BasicValueEnum::PointerValue(ptr_val) => {
-                    self.construtor.build_store(var_ptr, ptr_val)
-                        .map_err(|e| CompilerError::CodeGen(format!("Error ao armazenar ponteiro: {:?}", e)))?;
-                }
-                _ => return Err(CompilerError::CodeGen(format!("Tipo de valor não suportado para atribuição: {:?}", val.get_type()))),
+        match self.variaveis.get(nome).copied() {
+            Some(ArmazenamentoVariavel::Direta(_, var_type)) => {
+                // Primeira reatribuição: promover para Alocada
+                let alloca = self.safe_build(
+                    self.construtor.build_alloca(
+                        var_type.convert_para_basic_type_enum(),
+                        nome
+                    ),
+                    &format!("promover variável '{}' para alocada", nome)
+                )?;
+
+                self.safe_build(
+                    self.construtor.build_store(alloca, val),
+                    &format!("armazenar nova atribuição em '{}'", nome)
+                )?;
+
+                self.variaveis.insert(
+                    nome.to_string(),
+                    ArmazenamentoVariavel::Alocada(alloca, var_type)
+                );
             }
-        } else {
-            return Err(CompilerError::CodeGen(format!("Variável '{}' não declarada", nome)));
+            Some(ArmazenamentoVariavel::Alocada(var_ptr, _)) => {
+                // Já é alocada, apenas store
+                self.safe_build(
+                    self.construtor.build_store(var_ptr, val),
+                    &format!("armazenar reatribuição em '{}'", nome)
+                )?;
+            }
+            None => {
+                return Err(CompilerError::CodeGen(format!("Variável '{}' não declarada", nome)));
+            }
         }
+
         Ok(())
     }
 
@@ -423,12 +435,23 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             }
 
             Espressao::Identificador(name) => {
-                if let Some(&(var_ptr, var_type)) = self.variaveis.get(name) {
-                    let loaded = self.construtor.build_load(var_type.convert_para_basic_type_enum(), var_ptr, name)
-                        .map_err(|e| CompilerError::CodeGen(format!("Error ao carregar variável: {:?}", e)))?;
-                    Ok(loaded)
-                } else {
-                    Err(CompilerError::CodeGen(format!("Variável '{}' não encontrada", name)))
+                match self.variaveis.get(name).copied() {
+                    Some(ArmazenamentoVariavel::Direta(val, _)) => {
+                        // Armazenamento direto: retorna valor direto sem load!
+                        Ok(val)
+                    }
+                    Some(ArmazenamentoVariavel::Alocada(var_ptr, var_type)) => {
+                        // Armazenamento alocado: precisa fazer load
+                        let loaded = self.construtor.build_load(
+                            var_type.convert_para_basic_type_enum(),
+                            var_ptr,
+                            name
+                        ).map_err(|e| CompilerError::CodeGen(format!("Erro ao carregar variável: {:?}", e)))?;
+                        Ok(loaded)
+                    }
+                    None => {
+                        Err(CompilerError::CodeGen(format!("Variável '{}' não encontrada", name)))
+                    }
                 }
             }
 
@@ -515,33 +538,41 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
                                 } else if name.contains('.') {
                                     self.gera_chamada_de_funcao_de_modulo(name, args)
                                 } else if self.variaveis.contains_key(name) {
-                                    if let Some(&(var_ptr, var_type)) = self.variaveis.get(name) {
-                                        match var_type {
-                                            VariavelTipo::Funcao(func_ptr_type) => {
-                                                let param_types = vec![self.i64_tipo.into(); args.len()];
-                                                let fn_type = self.i64_tipo.fn_type(&param_types, false);
+                                    match self.variaveis.get(name).copied() {
+                                        Some(ArmazenamentoVariavel::Direta(_, var_type)) |
+                                        Some(ArmazenamentoVariavel::Alocada(_, var_type)) => {
+                                            match var_type {
+                                                VariavelTipo::Funcao(func_ptr_type) => {
+                                                    let param_types = vec![self.i64_tipo.into(); args.len()];
+                                                    let fn_type = self.i64_tipo.fn_type(&param_types, false);
 
-                                                let func_ptr = self.construtor.build_load(func_ptr_type, var_ptr, &format!("load_func_{}", name))
-                                                    .map_err(|e| CompilerError::CodeGen(format!("Erro ao carregar ponteiro da função: {:?}", e)))?;
+                                                    // Obter o ponteiro da função
+                                                    let func_ptr = match self.variaveis.get(name).copied().unwrap() {
+                                                        ArmazenamentoVariavel::Direta(v, _) => v,
+                                                        ArmazenamentoVariavel::Alocada(ptr, _) => {
+                                                            self.construtor.build_load(func_ptr_type, ptr, &format!("load_func_{}", name))
+                                                                .map_err(|e| CompilerError::CodeGen(format!("Erro ao carregar ponteiro da função: {:?}", e)))?
+                                                        }
+                                                    };
 
-                                                let mut arg_values = Vec::new();
-                                                for arg in args {
-                                                    arg_values.push(self.gera_espressao(arg)?.into());
+                                                    let mut arg_values = Vec::new();
+                                                    for arg in args {
+                                                        arg_values.push(self.gera_espressao(arg)?.into());
+                                                    }
+
+                                                    let call = self.construtor.build_indirect_call(
+                                                        fn_type,
+                                                        func_ptr.into_pointer_value(),
+                                                        &arg_values,
+                                                        &format!("call_{}", name)
+                                                    ).map_err(|e| CompilerError::CodeGen(format!("Erro ao construir chamada indireta: {:?}", e)))?;
+
+                                                    Ok(call.try_as_basic_value().left().unwrap())
                                                 }
-
-                                                let call = self.construtor.build_indirect_call(
-                                                    fn_type,
-                                                    func_ptr.into_pointer_value(),
-                                                    &arg_values,
-                                                    &format!("call_{}", name)
-                                                ).map_err(|e| CompilerError::CodeGen(format!("Erro ao construir chamada indireta: {:?}", e)))?;
-
-                                                Ok(call.try_as_basic_value().left().unwrap())
+                                                _ => Err(CompilerError::CodeGen(format!("Variável '{}' não é uma função", name))),
                                             }
-                                            _ => Err(CompilerError::CodeGen(format!("Variável '{}' não é uma função", name))),
                                         }
-                                    } else {
-                                        Err(CompilerError::CodeGen(format!("Variável '{}' não encontrada", name)))
+                                        None => Err(CompilerError::CodeGen(format!("Variável '{}' não encontrada", name)))
                                     }
                                 } else {
                                     Err(CompilerError::CodeGen(format!("Função desconhecida: {}", name)))
@@ -1221,6 +1252,9 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
         // Verificar se a alocação foi bem-sucedida
         self.verificar_alocacao(result_buffer)?;
 
+        // Registrar tamanho do buffer criado para otimização futura
+        self.tamanhos_buffers_criados.insert(result_buffer, total_len);
+
         // Registrar buffer temporário para liberação posterior
         self.buffers_concatenacao_temporarios.push(result_buffer);
 
@@ -1398,47 +1432,87 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
     
     fn generate_increment_decrement(&mut self, operand: &Espressao, is_increment: bool, prefix: bool) -> Result<BasicValueEnum<'ctx>, CompilerError> {
         if let Espressao::Identificador(name) = operand {
-            if let Some(&(var_ptr, var_type)) = self.variaveis.get(name) {
-                match var_type {
-                    VariavelTipo::Numero(_) => {
-                        let current_val = self.safe_build(
-                            self.construtor.build_load(self.i64_tipo, var_ptr, &format!("load_{}", name)),
-                            &format!("load variable {} for increment/decrement", name)
-                        )?.into_int_value();
+            match self.variaveis.get(name).copied() {
+                Some(ArmazenamentoVariavel::Direta(val, var_type)) => {
+                    // Primeira modificação: promover para Alocada
+                    match var_type {
+                        VariavelTipo::Numero(_) => {
+                            let current_val = val.into_int_value();
                         
-                        let one = self.i64_tipo.const_int(1, false);
-                        let new_val = if is_increment {
+                            let one = self.i64_tipo.const_int(1, false);
+                            let new_val = if is_increment {
+                                self.safe_build(
+                                    self.construtor.build_int_add(current_val, one, &format!("inc_{}", name)),
+                                    &format!("increment variable {}", name)
+                                )?
+                            } else {
+                                self.safe_build(
+                                    self.construtor.build_int_sub(current_val, one, &format!("dec_{}", name)),
+                                    &format!("decrement variable {}", name)
+                                )?
+                            };
+
+                            // Promover para Alocada
+                            let alloca = self.safe_build(
+                                self.construtor.build_alloca(self.i64_tipo, name),
+                                &format!("promover {} para alocada (increment/decrement)", name)
+                            )?;
+
                             self.safe_build(
-                                self.construtor.build_int_add(current_val, one, &format!("inc_{}", name)),
-                                &format!("increment variable {}", name)
-                            )?
-                        } else {
-                            self.safe_build(
-                                self.construtor.build_int_sub(current_val, one, &format!("dec_{}", name)),
-                                &format!("decrement variable {}", name)
-                            )?
-                        };
-                        
-                        self.safe_build(
-                            self.construtor.build_store(var_ptr, new_val),
-                            &format!("store {}cremented value to {}", 
-                                   if is_increment { "in" } else { "de" }, name)
-                        )?;
-                        
-                        let return_val = if prefix {
-                            new_val
-                        } else {
-                            current_val 
-                        };
-                        
-                        Ok(return_val.into())
+                                self.construtor.build_store(alloca, new_val),
+                                &format!("store {}cremented value", if is_increment { "in" } else { "de" })
+                            )?;
+
+                            self.variaveis.insert(
+                                name.to_string(),
+                                ArmazenamentoVariavel::Alocada(alloca, var_type)
+                            );
+
+                            let return_val = if prefix { new_val } else { current_val };
+                            Ok(return_val.into())
+                        }
+                        _ => Err(CompilerError::CodeGen(
+                            format!("Cannot increment/decrement non-integer variable '{}'", name)
+                        ))
                     }
-                    _ => Err(CompilerError::CodeGen(
-                        format!("Cannot increment/decrement non-integer variable '{}'", name)
-                    ))
                 }
-            } else {
-                Err(CompilerError::CodeGen(
+                Some(ArmazenamentoVariavel::Alocada(var_ptr, var_type)) => {
+                    // Já é alocada, pode fazer increment/decrement normalmente
+                    match var_type {
+                        VariavelTipo::Numero(_) => {
+                            let current_val = self.safe_build(
+                                self.construtor.build_load(self.i64_tipo, var_ptr, &format!("load_{}", name)),
+                                &format!("load variable {} for increment/decrement", name)
+                            )?.into_int_value();
+
+                            let one = self.i64_tipo.const_int(1, false);
+                            let new_val = if is_increment {
+                                self.safe_build(
+                                    self.construtor.build_int_add(current_val, one, &format!("inc_{}", name)),
+                                    &format!("increment variable {}", name)
+                                )?
+                            } else {
+                                self.safe_build(
+                                    self.construtor.build_int_sub(current_val, one, &format!("dec_{}", name)),
+                                    &format!("decrement variable {}", name)
+                                )?
+                            };
+
+                            self.safe_build(
+                                self.construtor.build_store(var_ptr, new_val),
+                                &format!("store {}cremented value to {}",
+                                       if is_increment { "in" } else { "de" }, name)
+                            )?;
+
+                            let return_val = if prefix { new_val } else { current_val };
+                            Ok(return_val.into())
+                        }
+                        _ => Err(CompilerError::CodeGen(
+                            format!("Cannot increment/decrement non-integer variable '{}'", name)
+                        ))
+                    }
+                }
+                None => Err(CompilerError::CodeGen(
                     format!("Variable '{}' not found for increment/decrement", name)
                 ))
             }
@@ -1883,7 +1957,10 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
                     .map_err(|e| CompilerError::CodeGen(format!("Error allocating parameter: {:?}", e)))?;
                 self.construtor.build_store(param_ptr, param_value)
                     .map_err(|e| CompilerError::CodeGen(format!("Error storing parameter: {:?}", e)))?;
-                self.variaveis.insert(param.clone(), (param_ptr, VariavelTipo::Numero(self.i64_tipo)));
+                self.variaveis.insert(
+                    param.clone(),
+                    ArmazenamentoVariavel::Alocada(param_ptr, VariavelTipo::Numero(self.i64_tipo))
+                );
             }
 
             for stmt in body {
@@ -1947,7 +2024,10 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
                 .map_err(|e| CompilerError::CodeGen(format!("Error allocating parameter: {:?}", e)))?;
             self.construtor.build_store(param_ptr, param_value)
                 .map_err(|e| CompilerError::CodeGen(format!("Error storing parameter: {:?}", e)))?;
-            self.variaveis.insert(param.clone(), (param_ptr, VariavelTipo::Numero(self.i64_tipo)));
+            self.variaveis.insert(
+                param.clone(),
+                ArmazenamentoVariavel::Alocada(param_ptr, VariavelTipo::Numero(self.i64_tipo))
+            );
         }
 
         for stmt in body {

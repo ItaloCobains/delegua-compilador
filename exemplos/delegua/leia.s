@@ -5,12 +5,12 @@
 _main:                                  ; @main
 	.cfi_startproc
 ; %bb.0:                                ; %entry
-	stp	x24, x23, [sp, #-64]!           ; 16-byte Folded Spill
-	stp	x22, x21, [sp, #16]             ; 16-byte Folded Spill
-	stp	x20, x19, [sp, #32]             ; 16-byte Folded Spill
-	stp	x29, x30, [sp, #48]             ; 16-byte Folded Spill
-	add	x29, sp, #48
-	.cfi_def_cfa w29, 16
+	sub	sp, sp, #80
+	stp	x24, x23, [sp, #16]             ; 16-byte Folded Spill
+	stp	x22, x21, [sp, #32]             ; 16-byte Folded Spill
+	stp	x20, x19, [sp, #48]             ; 16-byte Folded Spill
+	stp	x29, x30, [sp, #64]             ; 16-byte Folded Spill
+	.cfi_def_cfa_offset 80
 	.cfi_offset w30, -8
 	.cfi_offset w29, -16
 	.cfi_offset w19, -24
@@ -33,34 +33,29 @@ Lloh2:
 	adrp	x0, _formato_texto@PAGE
 Lloh3:
 	add	x0, x0, _formato_texto@PAGEOFF
-	str	x19, [sp, #-16]!
+	str	x19, [sp]
 	bl	_scanf
-	add	sp, sp, #16
-	mov	x8, sp
-	sub	x9, x8, #16
-	mov	sp, x9
 	mov	x0, x19
-	stur	x19, [x8, #-16]
 	bl	_strlen
+	mov	x21, x0
 	add	x0, x0, #7
 	bl	_malloc
 	cbz	x0, LBB0_13
-; %bb.2:                                ; %alocacao_sucesso3
+; %bb.2:                                ; %alocacao_sucesso2
 Lloh4:
 	adrp	x1, _texto_literal.1@PAGE
 Lloh5:
 	add	x1, x1, _texto_literal.1@PAGEOFF
 	mov	x20, x0
+	add	x21, x21, #6
 	bl	_strcpy
 	mov	x0, x20
 	mov	x1, x19
 	bl	_strcat
-	mov	x0, x20
-	bl	_strlen
-	add	x0, x0, #2
+	add	x0, x21, #2
 	bl	_malloc
 	cbz	x0, LBB0_13
-; %bb.3:                                ; %alocacao_sucesso10
+; %bb.3:                                ; %alocacao_sucesso9
 	mov	x1, x20
 	mov	x21, x0
 	bl	_strcpy
@@ -74,9 +69,8 @@ Lloh8:
 	adrp	x0, _formato_texto.3@PAGE
 Lloh9:
 	add	x0, x0, _formato_texto.3@PAGEOFF
-	str	x21, [sp, #-16]!
+	str	x21, [sp]
 	bl	_printf
-	add	sp, sp, #16
 	mov	x0, x20
 	bl	_free
 	mov	x0, x21
@@ -89,40 +83,35 @@ Lloh11:
 	mov	w0, #256                        ; =0x100
 	bl	_malloc
 	cbz	x0, LBB0_13
-; %bb.4:                                ; %alocacao_sucesso19
+; %bb.4:                                ; %alocacao_sucesso18
 	mov	x20, x0
 Lloh12:
 	adrp	x0, _formato_texto@PAGE
 Lloh13:
 	add	x0, x0, _formato_texto@PAGEOFF
-	str	x20, [sp, #-16]!
+	str	x20, [sp]
 	bl	_scanf
-	add	sp, sp, #16
-	mov	x8, sp
-	sub	x9, x8, #16
-	mov	sp, x9
 	mov	x0, x20
-	stur	x20, [x8, #-16]
 	bl	_strlen
+	mov	x22, x0
 	add	x0, x0, #11
 	bl	_malloc
 	cbz	x0, LBB0_13
-; %bb.5:                                ; %alocacao_sucesso29
+; %bb.5:                                ; %alocacao_sucesso27
 Lloh14:
 	adrp	x1, _texto_literal.5@PAGE
 Lloh15:
 	add	x1, x1, _texto_literal.5@PAGEOFF
 	mov	x21, x0
+	add	x22, x22, #10
 	bl	_strcpy
 	mov	x0, x21
 	mov	x1, x20
 	bl	_strcat
-	mov	x0, x21
-	bl	_strlen
-	add	x0, x0, #7
+	add	x0, x22, #7
 	bl	_malloc
 	cbz	x0, LBB0_13
-; %bb.6:                                ; %alocacao_sucesso39
+; %bb.6:                                ; %alocacao_sucesso36
 	mov	x1, x21
 	mov	x22, x0
 	bl	_strcpy
@@ -136,9 +125,8 @@ Lloh18:
 	adrp	x0, _formato_texto.3@PAGE
 Lloh19:
 	add	x0, x0, _formato_texto.3@PAGEOFF
-	str	x22, [sp, #-16]!
+	str	x22, [sp]
 	bl	_printf
-	add	sp, sp, #16
 	mov	x0, x21
 	bl	_free
 	mov	x0, x22
@@ -151,40 +139,35 @@ Lloh21:
 	mov	w0, #256                        ; =0x100
 	bl	_malloc
 	cbz	x0, LBB0_13
-; %bb.7:                                ; %alocacao_sucesso50
+; %bb.7:                                ; %alocacao_sucesso47
 	mov	x21, x0
 Lloh22:
 	adrp	x0, _formato_texto@PAGE
 Lloh23:
 	add	x0, x0, _formato_texto@PAGEOFF
-	str	x21, [sp, #-16]!
+	str	x21, [sp]
 	bl	_scanf
-	add	sp, sp, #16
-	mov	x8, sp
-	sub	x9, x8, #16
-	mov	sp, x9
 	mov	x0, x21
-	stur	x21, [x8, #-16]
 	bl	_strlen
+	mov	x23, x0
 	add	x0, x0, #15
 	bl	_malloc
 	cbz	x0, LBB0_13
-; %bb.8:                                ; %alocacao_sucesso60
+; %bb.8:                                ; %alocacao_sucesso56
 Lloh24:
 	adrp	x1, _texto_literal.8@PAGE
 Lloh25:
 	add	x1, x1, _texto_literal.8@PAGEOFF
 	mov	x22, x0
+	add	x23, x23, #14
 	bl	_strcpy
 	mov	x0, x22
 	mov	x1, x21
 	bl	_strcat
-	mov	x0, x22
-	bl	_strlen
-	add	x0, x0, #9
+	add	x0, x23, #9
 	bl	_malloc
 	cbz	x0, LBB0_13
-; %bb.9:                                ; %alocacao_sucesso70
+; %bb.9:                                ; %alocacao_sucesso65
 	mov	x1, x22
 	mov	x23, x0
 	bl	_strcpy
@@ -198,9 +181,8 @@ Lloh28:
 	adrp	x0, _formato_texto.3@PAGE
 Lloh29:
 	add	x0, x0, _formato_texto.3@PAGEOFF
-	str	x23, [sp, #-16]!
+	str	x23, [sp]
 	bl	_printf
-	add	sp, sp, #16
 	mov	x0, x22
 	bl	_free
 	mov	x0, x23
@@ -213,40 +195,35 @@ Lloh31:
 	mov	w0, #256                        ; =0x100
 	bl	_malloc
 	cbz	x0, LBB0_13
-; %bb.10:                               ; %alocacao_sucesso81
+; %bb.10:                               ; %alocacao_sucesso76
 	mov	x22, x0
 Lloh32:
 	adrp	x0, _formato_texto@PAGE
 Lloh33:
 	add	x0, x0, _formato_texto@PAGEOFF
-	str	x22, [sp, #-16]!
+	str	x22, [sp]
 	bl	_scanf
-	add	sp, sp, #16
-	mov	x8, sp
-	sub	x9, x8, #16
-	mov	sp, x9
 	mov	x0, x22
-	stur	x22, [x8, #-16]
 	bl	_strlen
+	mov	x24, x0
 	add	x0, x0, #13
 	bl	_malloc
 	cbz	x0, LBB0_13
-; %bb.11:                               ; %alocacao_sucesso91
+; %bb.11:                               ; %alocacao_sucesso85
 Lloh34:
 	adrp	x1, _texto_literal.11@PAGE
 Lloh35:
 	add	x1, x1, _texto_literal.11@PAGEOFF
 	mov	x23, x0
+	add	x24, x24, #12
 	bl	_strcpy
 	mov	x0, x23
 	mov	x1, x22
 	bl	_strcat
-	mov	x0, x23
-	bl	_strlen
-	add	x0, x0, #5
+	add	x0, x24, #5
 	bl	_malloc
 	cbz	x0, LBB0_13
-; %bb.12:                               ; %alocacao_sucesso101
+; %bb.12:                               ; %alocacao_sucesso94
 	mov	x1, x23
 	mov	x24, x0
 	bl	_strcpy
@@ -260,9 +237,8 @@ Lloh38:
 	adrp	x0, _formato_texto.3@PAGE
 Lloh39:
 	add	x0, x0, _formato_texto.3@PAGEOFF
-	str	x24, [sp, #-16]!
+	str	x24, [sp]
 	bl	_printf
-	add	sp, sp, #16
 	mov	x0, x23
 	bl	_free
 	mov	x0, x24
@@ -275,12 +251,12 @@ Lloh39:
 	bl	_free
 	mov	x0, x22
 	bl	_free
+	ldp	x29, x30, [sp, #64]             ; 16-byte Folded Reload
 	mov	w0, wzr
-	sub	sp, x29, #48
-	ldp	x29, x30, [sp, #48]             ; 16-byte Folded Reload
-	ldp	x20, x19, [sp, #32]             ; 16-byte Folded Reload
-	ldp	x22, x21, [sp, #16]             ; 16-byte Folded Reload
-	ldp	x24, x23, [sp], #64             ; 16-byte Folded Reload
+	ldp	x20, x19, [sp, #48]             ; 16-byte Folded Reload
+	ldp	x22, x21, [sp, #32]             ; 16-byte Folded Reload
+	ldp	x24, x23, [sp, #16]             ; 16-byte Folded Reload
+	add	sp, sp, #80
 	ret
 LBB0_13:                                ; %alocacao_falhou
 	mov	w0, #1                          ; =0x1
