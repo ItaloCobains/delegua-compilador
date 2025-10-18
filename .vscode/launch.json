@@ -2,22 +2,13 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "type": "lldb-dap",
+            "type": "lldb",
             "request": "launch",
-            "name": "Launch",
+            "name": "Debug",
             "program": "${workspaceRoot}/target/debug/delegua-compilador",
             "args": ["construa", "${workspaceRoot}/exemplos/delegua/matematica.delegua"],
             "cwd": "${workspaceRoot}",
-            "console": "integratedTerminal",
-            "env": [
-                "PATH=/opt/homebrew/opt/llvm/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
-            ],
-            "initCommands": [
-                "command script import ~/.rustup/toolchains/1.89.0-aarch64-apple-darwin/lib/rustlib/etc/lldb_lookup.py",
-                "command source ~/.rustup/toolchains/1.89.0-aarch64-apple-darwin/lib/rustlib/etc/lldb_commands",
-                "settings set target.max-children-count 500",
-                "settings set target.max-string-summary-length 10000"
-            ]
+            "console": "integratedTerminal"
         }
     ]
 }

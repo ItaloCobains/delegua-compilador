@@ -4,6 +4,7 @@ use inkwell::builder::Builder;
 use inkwell::values::FunctionValue;
 use inkwell::types::IntType;
 use std::collections::HashMap;
+use crate::importador::Modulo;
 
 pub struct Matematica<'ctx> {
     context: &'ctx Context,
@@ -30,10 +31,6 @@ impl<'ctx> Matematica<'ctx> {
         let func_absoluto = module.add_function("matematica_absoluto", tipo_absoluto, None);
         funcoes.insert("absoluto".to_string(), func_absoluto);
 
-        let tipo_potencia = self.i64_type.fn_type(&[self.i64_type.into(), self.i64_type.into()], false);
-        let func_potencia = module.add_function("matematica_potencia", tipo_potencia, None);
-        funcoes.insert("potencia".to_string(), func_potencia);
-
         let tipo_raiz = self.i64_type.fn_type(&[self.i64_type.into()], false);
         let func_raiz = module.add_function("matematica_raiz_quadrada", tipo_raiz, None);
         funcoes.insert("raiz_quadrada".to_string(), func_raiz);
@@ -43,7 +40,6 @@ impl<'ctx> Matematica<'ctx> {
 
     pub fn gerar_implementacoes(&self, module: &Module<'ctx>) {
         self.gerar_absoluto(module);
-        self.gerar_potencia(module);
         self.gerar_raiz_quadrada(module);
     }
 
@@ -66,55 +62,6 @@ impl<'ctx> Matematica<'ctx> {
         let resultado = self.builder.build_select(eh_negativo, menos_x, x, "resultado_absoluto").unwrap();
 
         self.builder.build_return(Some(&resultado)).unwrap();
-    }
-
-    fn gerar_potencia(&self, module: &Module<'ctx>) {
-        let func_potencia = module.get_function("matematica_potencia").unwrap();
-        let bloco_entrada = self.context.append_basic_block(func_potencia, "entry");
-        self.builder.position_at_end(bloco_entrada);
-
-        let base = func_potencia.get_nth_param(0).unwrap().into_int_value();
-        let expoente = func_potencia.get_nth_param(1).unwrap().into_int_value();
-
-        let resultado_ptr = self.builder.build_alloca(self.i64_type, "resultado").unwrap();
-        let contador_ptr = self.builder.build_alloca(self.i64_type, "contador").unwrap();
-
-        let um = self.i64_type.const_int(1, false);
-        let zero = self.i64_type.const_int(0, false);
-
-        self.builder.build_store(resultado_ptr, um).unwrap();
-        self.builder.build_store(contador_ptr, expoente).unwrap();
-
-        let bloco_laco = self.context.append_basic_block(func_potencia, "laco");
-        let bloco_corpo = self.context.append_basic_block(func_potencia, "corpo_laco");
-        let bloco_apos = self.context.append_basic_block(func_potencia, "apos");
-
-        self.builder.build_unconditional_branch(bloco_laco).unwrap();
-        self.builder.position_at_end(bloco_laco);
-
-        let contador = self.builder.build_load(self.i64_type, contador_ptr, "valor_contador").unwrap().into_int_value();
-        let condicao = self.builder.build_int_compare(
-            inkwell::IntPredicate::SGT,
-            contador,
-            zero,
-            "condicao"
-        ).unwrap();
-
-        self.builder.build_conditional_branch(condicao, bloco_corpo, bloco_apos).unwrap();
-
-        self.builder.position_at_end(bloco_corpo);
-        let resultado = self.builder.build_load(self.i64_type, resultado_ptr, "valor_resultado").unwrap().into_int_value();
-        let novo_resultado = self.builder.build_int_mul(resultado, base, "novo_resultado").unwrap();
-        self.builder.build_store(resultado_ptr, novo_resultado).unwrap();
-
-        let novo_contador = self.builder.build_int_sub(contador, um, "novo_contador").unwrap();
-        self.builder.build_store(contador_ptr, novo_contador).unwrap();
-
-        self.builder.build_unconditional_branch(bloco_laco).unwrap();
-
-        self.builder.position_at_end(bloco_apos);
-        let resultado_final = self.builder.build_load(self.i64_type, resultado_ptr, "resultado_final").unwrap();
-        self.builder.build_return(Some(&resultado_final)).unwrap();
     }
 
     fn gerar_raiz_quadrada(&self, module: &Module<'ctx>) {
@@ -213,5 +160,52 @@ impl<'ctx> Matematica<'ctx> {
 
         self.builder.position_at_end(bloco_fim);
         self.builder.build_unreachable().unwrap();
+    }
+}
+
+impl<'ctx> Modulo<'ctx> for Matematica<'ctx> {
+    fn declarar_funcoes(&self, module: &Module<'ctx>) -> HashMap<String, FunctionValue<'ctx>> {
+        self.declarar_funcoes(module)
+    }
+
+    fn gerar_implementacoes(&self, module: &Module<'ctx>) {
+        self.gerar_implementacoes(module)
+    }
+
+    fn declarar_funcao_especifica(&self, nome: &str, module: &Module<'ctx>) -> Option<FunctionValue<'ctx>> {
+        match nome {
+            "absoluto" => {
+                let tipo_absoluto = self.i64_type.fn_type(&[self.i64_type.into()], false);
+                let func_absoluto = module.add_function("matematica_absoluto", tipo_absoluto, None);
+                Some(func_absoluto)
+            }
+            "raiz_quadrada" => {
+                let tipo_raiz = self.i64_type.fn_type(&[self.i64_type.into()], false);
+                let func_raiz = module.add_function("matematica_raiz_quadrada", tipo_raiz, None);
+                Some(func_raiz)
+            }
+            _ => None,
+        }
+    }
+
+    fn gerar_implementacao_especifica(&self, nome: &str, module: &Module<'ctx>) -> bool {
+        match nome {
+            "absoluto" => {
+                self.gerar_absoluto(module);
+                true
+            }
+            "raiz_quadrada" => {
+                self.gerar_raiz_quadrada(module);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    fn listar_funcoes(&self) -> Vec<String> {
+        vec![
+            "absoluto".to_string(),
+            "raiz_quadrada".to_string(),
+        ]
     }
 }

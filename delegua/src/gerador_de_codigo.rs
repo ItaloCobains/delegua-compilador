@@ -7,7 +7,7 @@ use inkwell::AddressSpace;
 use std::collections::HashMap;
 use crate::ast::{Programa, Declaracao, Espressao, OperacaoBinaria};
 use crate::error::CompilerError;
-use crate::modules::matematica::Matematica;
+use crate::importador::Importador;
 
 #[derive(Clone, Copy)]
 enum VariavelTipo<'ctx> {
@@ -44,6 +44,8 @@ pub struct GeradorDeCodigo<'ctx> {
     funcoes_nativas: HashMap<String, FunctionValue<'ctx>>,
     /// Tabela de módulos importados
     modulos: HashMap<String, HashMap<String, FunctionValue<'ctx>>>,
+    /// Importador de módulos
+    importador: Importador<'ctx>,
     /// Tipo inteiro de 64 bits
     i64_tipo: IntType<'ctx>,
     /// Tipo ponteiro de 8 bits
@@ -80,6 +82,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             funcoes: HashMap::with_capacity(16),
             funcoes_nativas: HashMap::with_capacity(8),
             modulos: HashMap::with_capacity(4),
+            importador: Importador::new(contexto),
             textos_literais: HashMap::with_capacity(8),
             loop_pilha: Vec::with_capacity(8),
             i64_tipo,
@@ -209,21 +212,13 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
         }
     }
 
-    fn gera_importacao(&mut self, module: &str, _items: Option<&Vec<String>>) -> Result<(), CompilerError> {
-        match module {
-            "matematica" => {
-                let math_module = Matematica::new(self.contexto);
-                let functions = math_module.declarar_funcoes(&self.modulo);
-                math_module.gerar_implementacoes(&self.modulo);
-
-                let mut module_functions = HashMap::new();
-                for (name, func) in functions {
-                    module_functions.insert(name, func);
-                }
-                self.modulos.insert("matematica".to_string(), module_functions);
-            }
-            _ => return Err(CompilerError::CodeGen(format!("Modulo desconhecido: {}", module))),
+    fn gera_importacao(&mut self, module: &str, items: Option<&Vec<String>>) -> Result<(), CompilerError> {
+        // Tenta importar o módulo via importador
+        if let Some(funcoes) = self.importador.importar(&self.modulo, module, items)? {
+            // Se retornou Some, o módulo foi importado pela primeira vez
+            self.modulos.insert(module.to_string(), funcoes);
         }
+        // Se retornou None, o módulo já tinha sido importado anteriormente (cache)
         Ok(())
     }
 
@@ -404,7 +399,6 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
                             "maiuscula" => self.generate_maiuscula_call(args),
                             "minuscula" => self.generate_minuscula_call(args),
                             "absoluto" => self.generate_absoluto_call(args),
-                            "potencia" => self.generate_potencia_call(args),
                             "raiz_quadrada" => self.generate_raiz_quadrada_call(args),
                             _ => {
                                 if let Some(func) = self.funcoes.get(name) {
@@ -997,7 +991,9 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
         let arg_value = self.gera_espressao(&args[0])?;
 
         let absoluto_fn = self.modulo.get_function("matematica_absoluto")
-            .ok_or_else(|| CompilerError::CodeGen("matematica_absoluto function not found".to_string()))?;
+            .ok_or_else(|| CompilerError::CodeGen(
+                "Função 'absoluto' do módulo 'matematica' não foi importada. Use: importar { absoluto } de \"matematica\";".to_string()
+            ))?;
 
         let call_result = self.safe_build(
             self.construtor.build_call(absoluto_fn, &[arg_value.into()], "absoluto_call"),
@@ -1006,28 +1002,6 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
 
         call_result.try_as_basic_value().left()
             .ok_or_else(|| CompilerError::CodeGen("Failed to get result from absoluto".to_string()))
-    }
-
-    fn generate_potencia_call(&mut self, args: &[Espressao]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
-        if args.len() != 2 {
-            return Err(CompilerError::CodeGen(
-                "potencia() expects exactly 2 arguments".to_string()
-            ));
-        }
-
-        let base_value = self.gera_espressao(&args[0])?;
-        let exp_value = self.gera_espressao(&args[1])?;
-
-        let potencia_fn = self.modulo.get_function("matematica_potencia")
-            .ok_or_else(|| CompilerError::CodeGen("matematica_potencia function not found".to_string()))?;
-
-        let call_result = self.safe_build(
-            self.construtor.build_call(potencia_fn, &[base_value.into(), exp_value.into()], "potencia_call"),
-            "call potencia function"
-        )?;
-
-        call_result.try_as_basic_value().left()
-            .ok_or_else(|| CompilerError::CodeGen("Failed to get result from potencia".to_string()))
     }
 
     fn generate_raiz_quadrada_call(&mut self, args: &[Espressao]) -> Result<BasicValueEnum<'ctx>, CompilerError> {
