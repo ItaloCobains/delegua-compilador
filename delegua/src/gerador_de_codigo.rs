@@ -55,6 +55,10 @@ pub struct GeradorDeCodigo<'ctx> {
     loop_pilha: Vec<LoopContexto<'ctx>>,
     /// Buffers alocados que precisam ser liberados
     buffers_para_liberar: Vec<PointerValue<'ctx>>,
+    /// Buffers temporários de concatenação que podem ser liberados imediatamente
+    buffers_concatenacao_temporarios: Vec<PointerValue<'ctx>>,
+    /// Mapa de literais (globalvalue) para seus tamanhos conhecidos
+    tamanhos_literais_globais: HashMap<GlobalValue<'ctx>, usize>,
 }
 
 /// Contexto de loop para controle de break/continue
@@ -87,6 +91,8 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             textos_literais: HashMap::with_capacity(8),
             loop_pilha: Vec::with_capacity(8),
             buffers_para_liberar: Vec::new(),
+            buffers_concatenacao_temporarios: Vec::new(),
+            tamanhos_literais_globais: HashMap::new(),
             i64_tipo,
             i32_tipo,
             i8_tipo: i8_ponteiro_tipo,
@@ -190,6 +196,48 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
 
         // Continuar no bloco de sucesso
         self.construtor.position_at_end(bloco_sucesso);
+        Ok(())
+    }
+
+    fn obter_tamanho_string(
+        &mut self,
+        ponteiro: PointerValue<'ctx>,
+        nome: &str
+    ) -> Result<IntValue<'ctx>, CompilerError> {
+        // Tentar descobrir se o ponteiro vem de um GlobalValue
+        // Verificar se é um GlobalValue consultando nosso mapa
+        for (global, &tamanho) in &self.tamanhos_literais_globais {
+            if global.as_pointer_value() == ponteiro {
+                // Otimização: tamanho conhecido em tempo de compilação!
+                return Ok(self.i64_tipo.const_int(tamanho as u64, false));
+            }
+        }
+
+        // Fallback: chamar strlen dinamicamente
+        let strlen_fn = self.pega_funcoes_nativas("strlen")?;
+        let len_call = self.safe_build(
+            self.construtor.build_call(strlen_fn, &[ponteiro.into()], nome),
+            "strlen"
+        )?;
+
+        Ok(len_call.try_as_basic_value()
+            .left()
+            .ok_or_else(|| CompilerError::CodeGen("Falha ao obter tamanho da string".to_string()))?
+            .into_int_value())
+    }
+
+    fn liberar_buffers_temporarios(&mut self) -> Result<(), CompilerError> {
+        if self.buffers_concatenacao_temporarios.is_empty() {
+            return Ok(());
+        }
+
+        let free_fn = self.pega_funcoes_nativas("free")?;
+        for buffer in &self.buffers_concatenacao_temporarios {
+            self.construtor.build_call(free_fn, &[(*buffer).into()], "liberar_temp")
+                .map_err(|e| CompilerError::CodeGen(format!("Erro ao liberar buffer temporário: {:?}", e)))?;
+        }
+
+        self.buffers_concatenacao_temporarios.clear();
         Ok(())
     }
 
@@ -359,9 +407,14 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
                 global.set_constant(true);
                 global.set_unnamed_addr(true);
 
+                // Registrar tamanho do literal para otimização de strlen
+                let tamanho = s.len();
+                self.tamanhos_literais_globais.insert(global, tamanho);
+
                 // Com ponteiros opacos (LLVM 15+), não precisamos de GEP explícito
                 // O LLVM entende automaticamente a conversão de ptr para ptr
-                Ok(global.as_pointer_value().into())
+                let ponteiro = global.as_pointer_value();
+                Ok(ponteiro.into())
             }
 
             Espressao::Logico(b) => {
@@ -631,6 +684,9 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
                 ))
             }
         }
+
+        // Liberar buffers temporários de concatenação após escrever
+        self.liberar_buffers_temporarios()?;
 
         Ok(self.i64_tipo.const_int(0, false).into())
     }
@@ -1132,32 +1188,17 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
     }
 
     fn generate_string_concat(&mut self, left: PointerValue<'ctx>, right: PointerValue<'ctx>) -> Result<BasicValueEnum<'ctx>, CompilerError> {
-        let strlen_fn = self.pega_funcoes_nativas("strlen")?;
         let malloc_fn = self.pega_funcoes_nativas("malloc")?;
         let strcpy_fn = self.pega_funcoes_nativas("strcpy")?;
         let strcat_fn = self.pega_funcoes_nativas("strcat")?;
-        
-        let left_len_call = self.safe_build(
-            self.construtor.build_call(strlen_fn, &[left.into()], "left_len"),
-            "strlen left string"
-        )?;
-        let left_len = left_len_call.try_as_basic_value()
-            .left()
-            .ok_or_else(|| CompilerError::CodeGen("Failed to get left string length".to_string()))?
-            .into_int_value();
 
-        let right_len_call = self.safe_build(
-            self.construtor.build_call(strlen_fn, &[right.into()], "right_len"),
-            "strlen right string"
-        )?;
-        let right_len = right_len_call.try_as_basic_value()
-            .left()
-            .ok_or_else(|| CompilerError::CodeGen("Failed to get right string length".to_string()))?
-            .into_int_value();
+        // Usar método otimizado para obter tamanhos (usa constante para literais)
+        let left_len = self.obter_tamanho_string(left, "left_len")?;
+        let right_len = self.obter_tamanho_string(right, "right_len")?;
 
         let total_len = self.safe_build(
             self.construtor.build_int_add(left_len, right_len, "total_len"),
-            "add string lengths"
+            "somar tamanhos das strings"
         )?;
         let total_len_plus_one = self.safe_build(
             self.construtor.build_int_add(
@@ -1165,25 +1206,31 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
                 self.i64_tipo.const_int(1, false),
                 "total_len_plus_one"
             ),
-            "add null terminator space"
+            "adicionar espaço para terminador nulo"
         )?;
 
         let result_buffer_call = self.safe_build(
             self.construtor.build_call(malloc_fn, &[total_len_plus_one.into()], "concat_buffer"),
-            "malloc string concatenation buffer"
+            "malloc buffer de concatenação"
         )?;
         let result_buffer = result_buffer_call.try_as_basic_value()
             .left()
-            .ok_or_else(|| CompilerError::CodeGen("Failed to allocate concatenation buffer".to_string()))?
+            .ok_or_else(|| CompilerError::CodeGen("Falha ao alocar buffer de concatenação".to_string()))?
             .into_pointer_value();
+
+        // Verificar se a alocação foi bem-sucedida
+        self.verificar_alocacao(result_buffer)?;
+
+        // Registrar buffer temporário para liberação posterior
+        self.buffers_concatenacao_temporarios.push(result_buffer);
 
         self.safe_build(
             self.construtor.build_call(strcpy_fn, &[result_buffer.into(), left.into()], "strcpy_first"),
-            "copy first string"
+            "copiar primeira string"
         )?;
         self.safe_build(
             self.construtor.build_call(strcat_fn, &[result_buffer.into(), right.into()], "strcat_second"),
-            "concatenate second string"
+            "concatenar segunda string"
         )?;
 
         Ok(result_buffer.into())
