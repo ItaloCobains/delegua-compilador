@@ -1,1 +1,13 @@
-leia("Digite seu nome: ")
+var nome = leia("Digite seu nome: ")
+
+escreva("Olá, " + nome + "!")
+
+var idade = leia("Digite sua idade: ")
+
+escreva("Você tem " + idade + " anos.")
+
+var altura = leia("Digite sua altura em metros: ")
+escreva("Sua altura é " + altura + " metros.")
+
+var peso = leia("Digite seu peso em kg: ")
+escreva("Seu peso é " + peso + " kg.")

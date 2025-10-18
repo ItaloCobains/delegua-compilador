@@ -100,7 +100,7 @@ impl<'a> AvaliadorSintatico<'a> {
         let nome = self.consumir_identificador("Esperado nome da variável")?;
         self.consumir(Self::simbolo_com_posicao(Simbolo::Atribuir), "Esperado '=' após o nome da variável")?;
         let inicializador = self.resolve_espressao()?;
-        self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a declaração da variável")?;
+        let _ = self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a declaração da variável");
 
         Ok(Declaracao::Variavel { nome, valor: inicializador })
     }
@@ -110,7 +110,7 @@ impl<'a> AvaliadorSintatico<'a> {
 
         if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::Atribuir)) {
             let valor = self.resolve_espressao()?;
-            self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a atribuição")?;
+            let _ = self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a atribuição");
             Ok(Declaracao::Atribuicao { nome, valor })
         } else if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ParenteseEsquerdo)) {
             let args = self.resolve_argumentos()?;
@@ -122,14 +122,14 @@ impl<'a> AvaliadorSintatico<'a> {
             }))
         } else if matches!(self.simbolo_atual(), Simbolo::Incremento(_)) {
             self.avancar(); // consume ++
-            self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após o incremento")?;
+            let _ = self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após o incremento");
             Ok(Declaracao::ChamadaDeFuncao(Espressao::Incremento {
                 operando: Box::new(Espressao::Identificador(nome)),
                 prefixo: false, // postfix: x++
             }))
         } else if matches!(self.simbolo_atual(), Simbolo::Decremento(_)) {
             self.avancar(); // consume --
-            self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após o decremento")?;
+            let _ = self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após o decremento");
             Ok(Declaracao::ChamadaDeFuncao(Espressao::Decremento {
                 operando: Box::new(Espressao::Identificador(nome)),
                 prefixo: false, // postfix: x--
@@ -171,7 +171,7 @@ impl<'a> AvaliadorSintatico<'a> {
         if let Simbolo::Texto(module, _) = self.simbolo_atual() {
             let module = module.to_string();
             self.avancar();
-            self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a importação")?;
+            let _ = self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a importação");
             Ok(Declaracao::Importacao { modulo: module, itens: None })
         } else if self.compara_simbolos(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda)) {
             let mut items = Vec::new();
@@ -194,7 +194,7 @@ impl<'a> AvaliadorSintatico<'a> {
             if let Simbolo::Texto(module, _) = self.simbolo_atual() {
                 let module = module.to_string();
                 self.avancar();
-                self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a importação")?;
+                let _ = self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a importação");
                 Ok(Declaracao::Importacao { modulo: module, itens: Some(items) })
             } else {
                 Err(CompilerError::AvaliadorSintatico("Esperado nome do módulo após 'from'".to_string()))
@@ -808,7 +808,7 @@ impl<'a> AvaliadorSintatico<'a> {
         } else {
             return Err(CompilerError::AvaliadorSintatico("Esperado declaração de variável ou ';' no loop for".to_string()));
         };
-        self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após o inicializador")?;
+        let _ = self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após o inicializador");
 
         let condition = if !self.compara(Self::simbolo_com_posicao(Simbolo::PontoEVirgula)) && !self.compara(Self::simbolo_com_posicao(Simbolo::ChaveEsquerda)) {
             Some(self.resolve_espressao()?)
@@ -903,7 +903,7 @@ impl<'a> AvaliadorSintatico<'a> {
             Some(self.resolve_espressao()?)
         };
 
-        self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a declaração de retorno")?;
+        let _ = self.consumir(Self::simbolo_com_posicao(Simbolo::PontoEVirgula), "Esperado ';' após a declaração de retorno");
 
         Ok(Declaracao::Retorna(value))
     }

@@ -53,6 +53,8 @@ pub struct GeradorDeCodigo<'ctx> {
     textos_literais: HashMap<String, GlobalValue<'ctx>>,
     /// Pilha de contextos de loop para controle de break/continue
     loop_pilha: Vec<LoopContexto<'ctx>>,
+    /// Buffers alocados que precisam ser liberados
+    buffers_para_liberar: Vec<PointerValue<'ctx>>,
 }
 
 /// Contexto de loop para controle de break/continue
@@ -84,6 +86,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             modulos: HashMap::with_capacity(4),
             textos_literais: HashMap::with_capacity(8),
             loop_pilha: Vec::with_capacity(8),
+            buffers_para_liberar: Vec::new(),
             i64_tipo,
             i32_tipo,
             i8_tipo: i8_ponteiro_tipo,
@@ -137,9 +140,21 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
                 let params = &[self.i8_tipo.into()];
                 adicionar_funcao("scanf", &self.i64_tipo, params, true)
             }
+            "puts" => {
+                let params = &[self.i8_tipo.into()];
+                adicionar_funcao("puts", &self.i32_tipo, params, false)
+            }
+            "exit" => {
+                let params = &[self.i32_tipo.into()];
+                adicionar_funcao("exit", &self.i32_tipo, params, false)
+            }
+            "free" => {
+                let params = &[self.i8_tipo.into()];
+                adicionar_funcao("free", &self.i32_tipo, params, false)
+            }
             _ => {
                 return Err(CompilerError::CodeGen(format!(
-                    "Função '{}' não encontrada. Disponíveis: printf, malloc, strlen, strcpy, strcat, sprintf, scanf",
+                    "Função '{}' não encontrada. Disponíveis: printf, malloc, strlen, strcpy, strcat, sprintf, scanf, puts, exit, free",
                     nome
                 )))
             }
@@ -147,6 +162,35 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
 
         self.funcoes_nativas.insert(nome.to_string(), fn_val);
         Ok(fn_val)
+    }
+
+    fn verificar_alocacao(&mut self, ponteiro: PointerValue<'ctx>) -> Result<(), CompilerError> {
+        let funcao_atual = self.construtor.get_insert_block()
+            .unwrap()
+            .get_parent()
+            .unwrap();
+
+        let bloco_falhou = self.contexto.append_basic_block(funcao_atual, "alocacao_falhou");
+        let bloco_sucesso = self.contexto.append_basic_block(funcao_atual, "alocacao_sucesso");
+
+        let e_nulo = self.construtor.build_is_null(ponteiro, "e_nulo")
+            .map_err(|e| CompilerError::CodeGen(format!("Erro ao verificar null: {:?}", e)))?;
+
+        self.construtor.build_conditional_branch(e_nulo, bloco_falhou, bloco_sucesso)
+            .map_err(|e| CompilerError::CodeGen(format!("Erro ao criar branch condicional: {:?}", e)))?;
+
+        // Bloco de falha
+        self.construtor.position_at_end(bloco_falhou);
+        let exit_fn = self.pega_funcoes_nativas("exit")?;
+        let codigo_erro = self.i32_tipo.const_int(1, false);
+        self.construtor.build_call(exit_fn, &[codigo_erro.into()], "exit_call")
+            .map_err(|e| CompilerError::CodeGen(format!("Erro ao chamar exit: {:?}", e)))?;
+        self.construtor.build_unreachable()
+            .map_err(|e| CompilerError::CodeGen(format!("Erro ao criar unreachable: {:?}", e)))?;
+
+        // Continuar no bloco de sucesso
+        self.construtor.position_at_end(bloco_sucesso);
+        Ok(())
     }
 
     pub fn gerar(&mut self, programa: &Programa) -> Result<(), CompilerError> {
@@ -159,6 +203,15 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
 
         for statement in &programa.declaracoes {
             self.gera_declacao(statement)?;
+        }
+
+        // Liberar buffers alocados
+        if !self.buffers_para_liberar.is_empty() {
+            let free_fn = self.pega_funcoes_nativas("free")?;
+            for buffer in &self.buffers_para_liberar {
+                self.construtor.build_call(free_fn, &[(*buffer).into()], "liberar_buffer")
+                    .map_err(|e| CompilerError::CodeGen(format!("Erro ao liberar buffer: {:?}", e)))?;
+            }
         }
 
         let zero = i32_tipo.const_int(0, false);
@@ -611,8 +664,11 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
                 "malloc for input buffer"
             )?;
             let buffer = buffer_call.try_as_basic_value().left()
-                .ok_or_else(|| CompilerError::CodeGen("Failed to get buffer from malloc".to_string()))?
+                .ok_or_else(|| CompilerError::CodeGen("Falha ao obter buffer do malloc".to_string()))?
                 .into_pointer_value();
+
+            // Verificar se a alocação foi bem-sucedida
+            self.verificar_alocacao(buffer)?;
 
             let format_ptr = self.get_or_create_format_string("%255s\0");
             self.safe_build(
@@ -624,19 +680,21 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
                 "scanf call"
             )?;
 
+            // Registrar buffer para liberação automática
+            self.buffers_para_liberar.push(buffer);
+
             Ok(buffer.into())
         } else if args.len() == 1 {
             let prompt = self.gera_espressao(&args[0])?;
             if let BasicValueEnum::PointerValue(prompt_ptr) = prompt {
-                let printf_fn = self.pega_funcoes_nativas("printf")?;
-                let format_ptr = self.get_or_create_format_string("%s\0");
+                let puts_fn = self.pega_funcoes_nativas("puts")?;
                 self.safe_build(
                     self.construtor.build_call(
-                        printf_fn,
-                        &[format_ptr.as_pointer_value().into(), prompt_ptr.into()],
-                        "printf_prompt"
+                        puts_fn,
+                        &[prompt_ptr.into()],
+                        "puts_prompt"
                     ),
-                    "printf prompt call"
+                    "puts prompt call"
                 )?;
             }
 
@@ -646,8 +704,11 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
                 "malloc for input buffer"
             )?;
             let buffer = buffer_call.try_as_basic_value().left()
-                .ok_or_else(|| CompilerError::CodeGen("Failed to get buffer from malloc".to_string()))?
+                .ok_or_else(|| CompilerError::CodeGen("Falha ao obter buffer do malloc".to_string()))?
                 .into_pointer_value();
+
+            // Verificar se a alocação foi bem-sucedida
+            self.verificar_alocacao(buffer)?;
 
             let format_ptr = self.get_or_create_format_string("%255s\0");
             self.safe_build(
@@ -658,6 +719,9 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
                 ),
                 "scanf call"
             )?;
+
+            // Registrar buffer para liberação automática
+            self.buffers_para_liberar.push(buffer);
 
             Ok(buffer.into())
         } else {
