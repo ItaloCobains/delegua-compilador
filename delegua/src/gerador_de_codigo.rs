@@ -7,7 +7,6 @@ use inkwell::AddressSpace;
 use std::collections::HashMap;
 use crate::ast::{Programa, Declaracao, Espressao, OperacaoBinaria};
 use crate::error::CompilerError;
-use crate::importador::Importador;
 
 #[derive(Clone, Copy)]
 enum VariavelTipo<'ctx> {
@@ -44,8 +43,6 @@ pub struct GeradorDeCodigo<'ctx> {
     funcoes_nativas: HashMap<String, FunctionValue<'ctx>>,
     /// Tabela de módulos importados
     modulos: HashMap<String, HashMap<String, FunctionValue<'ctx>>>,
-    /// Importador de módulos
-    importador: Importador<'ctx>,
     /// Tipo inteiro de 64 bits
     i64_tipo: IntType<'ctx>,
     /// Tipo ponteiro de 8 bits
@@ -82,17 +79,11 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             funcoes: HashMap::with_capacity(16),
             funcoes_nativas: HashMap::with_capacity(8),
             modulos: HashMap::with_capacity(4),
-            importador: Importador::new(contexto),
             textos_literais: HashMap::with_capacity(8),
             loop_pilha: Vec::with_capacity(8),
             i64_tipo,
             i8_ponteiro_tipo,
         };
-
-        // TODO: Devo carregar isso apenas quando importar algum modulo de matematica
-        // let math_module = Matematica::new(contexto);
-        // math_module.declarar_funcoes(&codegen.modulo);
-        // math_module.gerar_implementacoes(&codegen.modulo);
 
         Ok(codegen)
     }
@@ -170,7 +161,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
                 self.gera_atribuicao(name, value)
             }
             Declaracao::Importacao { modulo: module, itens: items } => {
-                self.gera_importacao(module, items.as_ref())
+                todo!("Implementar importação de módulos")
             }
             Declaracao::Se { condicao: condition, ramificacao_entao: then_branch, ramificacao_outro: else_branch } => {
                 self.generate_if_statement(condition, then_branch, else_branch.as_ref())
@@ -210,16 +201,6 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
                 self.generate_return_statement(value.as_ref())
             }
         }
-    }
-
-    fn gera_importacao(&mut self, module: &str, items: Option<&Vec<String>>) -> Result<(), CompilerError> {
-        // Tenta importar o módulo via importador
-        if let Some(funcoes) = self.importador.importar(&self.modulo, module, items)? {
-            // Se retornou Some, o módulo foi importado pela primeira vez
-            self.modulos.insert(module.to_string(), funcoes);
-        }
-        // Se retornou None, o módulo já tinha sido importado anteriormente (cache)
-        Ok(())
     }
 
     fn gera_declaracao_variavel(&mut self, name: &str, value: &Espressao) -> Result<(), CompilerError> {
