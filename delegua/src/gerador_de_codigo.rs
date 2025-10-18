@@ -2,7 +2,7 @@ use inkwell::context::Context;
 use inkwell::module::Module;
 use inkwell::builder::Builder;
 use inkwell::values::{IntValue, PointerValue, FunctionValue, BasicValueEnum};
-use inkwell::types::{IntType, PointerType, BasicTypeEnum};
+use inkwell::types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum, IntType, PointerType};
 use inkwell::AddressSpace;
 use std::collections::HashMap;
 use crate::ast::{Programa, Declaracao, Espressao, OperacaoBinaria};
@@ -94,41 +94,51 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             return Ok(fn_val);
         }
 
+        let adicionar_funcao = |fn_name: &str,
+                                retorno: &dyn BasicType<'ctx>,
+                                parametros: &[BasicMetadataTypeEnum<'ctx>],
+                                is_var_args: bool| -> FunctionValue<'ctx> {
+            let fn_tipo = retorno.fn_type(parametros, is_var_args);
+            self.modulo.add_function(fn_name, fn_tipo, None)
+        };
+
         let fn_val = match nome {
             "printf" => {
-                let printf_type = self.i64_tipo.fn_type(&[self.i8_ponteiro_tipo.into()], true);
-                self.modulo.add_function("printf", printf_type, None)
+                let params = &[self.i8_ponteiro_tipo.into()];
+                adicionar_funcao("printf", &self.i64_tipo, params, true)
             }
             "malloc" => {
-                let malloc_type = self.i8_ponteiro_tipo.fn_type(&[self.i64_tipo.into()], false);
-                self.modulo.add_function("malloc", malloc_type, None)
+                let params = &[self.i64_tipo.into()];
+                adicionar_funcao("malloc", &self.i8_ponteiro_tipo, params, false)
             }
             "strlen" => {
-                let strlen_type = self.i64_tipo.fn_type(&[self.i8_ponteiro_tipo.into()], false);
-                self.modulo.add_function("strlen", strlen_type, None)
+                let params = &[self.i8_ponteiro_tipo.into()];
+                adicionar_funcao("strlen", &self.i64_tipo, params, false)
             }
-            "strcpy" => {
-                let strcpy_type = self.i8_ponteiro_tipo.fn_type(&[self.i8_ponteiro_tipo.into(), self.i8_ponteiro_tipo.into()], false);
-                self.modulo.add_function("strcpy", strcpy_type, None)
-            }
-            "strcat" => {
-                let strcat_type = self.i8_ponteiro_tipo.fn_type(&[self.i8_ponteiro_tipo.into(), self.i8_ponteiro_tipo.into()], false);
-                self.modulo.add_function("strcat", strcat_type, None)
+            "strcpy" | "strcat" => {
+                let params = &[
+                    self.i8_ponteiro_tipo.into(),
+                    self.i8_ponteiro_tipo.into(),
+                ];
+                adicionar_funcao(nome, &self.i8_ponteiro_tipo, params, false)
             }
             "sprintf" => {
-                let sprintf_type = self.i64_tipo.fn_type(&[
+                let params = &[
                     self.i8_ponteiro_tipo.into(),
-                    self.i8_ponteiro_tipo.into()
-                ], true);
-                self.modulo.add_function("sprintf", sprintf_type, None)
+                    self.i8_ponteiro_tipo.into(),
+                ];
+                adicionar_funcao("sprintf", &self.i64_tipo, params, true)
             }
             "scanf" => {
-                let scanf_type = self.i64_tipo.fn_type(&[self.i8_ponteiro_tipo.into()], true);
-                self.modulo.add_function("scanf", scanf_type, None)
+                let params = &[self.i8_ponteiro_tipo.into()];
+                adicionar_funcao("scanf", &self.i64_tipo, params, true)
             }
-            _ => return Err(CompilerError::CodeGen(
-                format!("Função '{}' não encontrada. Disponíveis: printf, malloc, strlen, strcpy, strcat, sprintf, scanf", nome)
-            )),
+            _ => {
+                return Err(CompilerError::CodeGen(format!(
+                    "Função '{}' não encontrada. Disponíveis: printf, malloc, strlen, strcpy, strcat, sprintf, scanf",
+                    nome
+                )))
+            }
         };
 
         self.funcoes_nativas.insert(nome.to_string(), fn_val);
