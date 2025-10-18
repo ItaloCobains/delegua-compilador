@@ -45,7 +45,9 @@ pub struct GeradorDeCodigo<'ctx> {
     modulos: HashMap<String, HashMap<String, FunctionValue<'ctx>>>,
     /// Tipo inteiro de 64 bits
     i64_tipo: IntType<'ctx>,
-    /// Tipo ponteiro de 8 bits
+    /// Tipo inteiro de 32 bits
+    i32_tipo: IntType<'ctx>,
+    /// Tipo Ponteiro
     i8_ponteiro_tipo: PointerType<'ctx>,
     /// Tabela de textos literais
     textos_literais: HashMap<String, PointerValue<'ctx>>,
@@ -69,6 +71,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
         let construtor = contexto.create_builder();
 
         let i64_tipo = contexto.i64_type();
+        let i32_tipo = contexto.i32_type();
         let i8_ponteiro_tipo = contexto.ptr_type(inkwell::AddressSpace::default());
 
         let codegen = GeradorDeCodigo {
@@ -82,6 +85,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             textos_literais: HashMap::with_capacity(8),
             loop_pilha: Vec::with_capacity(8),
             i64_tipo,
+            i32_tipo,
             i8_ponteiro_tipo,
         };
 
@@ -105,7 +109,7 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
         let fn_val = match nome {
             "printf" => {
                 let params = &[self.i8_ponteiro_tipo.into()];
-                adicionar_funcao("printf", &self.i64_tipo, params, true)
+                adicionar_funcao("printf", &self.i32_tipo, params, true)
             }
             "malloc" => {
                 let params = &[self.i64_tipo.into()];
@@ -293,11 +297,14 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
             }
 
             Espressao::Texto(s) => {
-                let string_val = self.contexto.const_string(s.as_bytes(), true);
-                let global = self.modulo.add_global(string_val.get_type(), None, "string_literal");
-                global.set_initializer(&string_val);
-                let ptr = global.as_pointer_value();
-                Ok(ptr.into())
+                let texto_valor = self.contexto.const_string(s.as_bytes(), true);
+
+                let global = self.modulo.add_global(texto_valor.get_type(), None, "texto_literal");
+                global.set_initializer(&texto_valor);
+                global.set_constant(true);
+                global.set_unnamed_addr(true);
+                let ponteiro = global.as_pointer_value();
+                Ok(ponteiro.into())
             }
 
             Espressao::Logico(b) => {
@@ -1121,12 +1128,14 @@ impl<'ctx> GeradorDeCodigo<'ctx> {
         }
         
         let format_str = self.contexto.const_string(format.as_bytes(), false);
-        let global = self.modulo.add_global(format_str.get_type(), None, "format_str");
+        let global = self.modulo.add_global(format_str.get_type(), None, "formato_texto");
         global.set_initializer(&format_str);
-        let ptr = global.as_pointer_value();
+        global.set_constant(true);
+        global.set_unnamed_addr(true);
+        let ponteiro = global.as_pointer_value();
         
-        self.textos_literais.insert(format.to_string(), ptr);
-        ptr
+        self.textos_literais.insert(format.to_string(), ponteiro);
+        ponteiro
     }
 
     fn get_or_create_string_literal(&mut self, text: &str) -> PointerValue<'ctx> {
